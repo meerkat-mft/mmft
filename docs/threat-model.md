@@ -1,6 +1,6 @@
 # Threat model
 
-Status: Draft for review, 2026-10-31. Terms follow [GLOSSARY.md](../GLOSSARY.md).
+Status: Accepted, 2026-10-31. Terms follow [GLOSSARY.md](../GLOSSARY.md).
 
 This model covers the MVP design and the roadmap items that change it. It starts from a compromised component and asks what the attacker gets. Findings at the end feed the M0 design ADRs.
 
@@ -117,7 +117,7 @@ Priority: **Blocker** must be solved in the M0 design. **Required** must be buil
 | --- | --- | --- | --- |
 | F1 | **Console trust.** Code served to a browser can be altered by whoever serves it, which could capture credentials and misdirect signing. Resolved by [ADR 0009](adr/0009-trusted-approvals-in-the-cli.md): approval and credential entry move to the signed CLI, and the console is a separate container. | Resolved | ADR 0009 |
 | F2 | **Replay and rollback.** A signature alone doesn't stop an older signed flow version or agent release from being reused. Agents need to track the newest version they have accepted, and flow versions should be revocable. | Blocker | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
-| F3 | **Relay tampering.** Encryption must bind every chunk to its delivery, position, and total, so that reordering, truncation, and replay all fail. | Blocker | [#6](https://github.com/meerkat-mft/mmft/issues/6) |
+| F3 | **Relay tampering.** Reordering, truncation, and replay must all fail. Resolved by [ADR 0010](adr/0010-age-sealed-files.md): the age format protects chunk order and truncation, and a signed manifest binds each sealed file to one delivery. | Resolved | ADR 0010 |
 | F4 | **Self-reported evidence.** Audit events from one agent prove only what that agent claims. A delivery record should need signed statements from both agents, with the destination's checksum computed independently. | Required, M2 | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
 | F5 | **Hostile metadata.** Everything an agent reports is untrusted input to the orchestrator and console. Validate it on the server, escape it in the console, and set a strict content security policy. | Required, M3 | [#9](https://github.com/meerkat-mft/mmft/issues/9) |
 | F6 | **Allowlist protection.** The agent's OS user must not be able to write its own allowlist or configuration. Each agent needs least-privilege packaging on Linux and Windows. | Required, M2 | [#8](https://github.com/meerkat-mft/mmft/issues/8) |

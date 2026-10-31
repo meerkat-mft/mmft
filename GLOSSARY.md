@@ -114,6 +114,14 @@ _Avoid_: Job, execution, instance
 One file going to one destination within a run, with its own retries and result.
 _Avoid_: Transfer, transmission
 
+**Sealed file**:
+A file encrypted for one destination agent, used for one delivery.
+_Avoid_: Ciphertext file, encrypted blob
+
+**Delivery manifest**:
+The source agent's signed statement of what a sealed file is and which delivery it belongs to.
+_Avoid_: Envelope, metadata file
+
 **Lease**:
 An agent's temporary claim on work, which expires if the agent stops responding.
 _Avoid_: Lock, reservation

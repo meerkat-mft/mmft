@@ -76,8 +76,8 @@ Everything below is on the [roadmap](roadmap.md) unless marked never.
 1. A trigger fires, and the orchestrator creates a run for a specific flow version.
 2. The source agent claims the work under a lease and verifies the flow signature and its allowlist.
 3. The agent applies the selection rule, confirms each file is complete, and evaluates conditions to choose a path.
-4. The agent encrypts each file so that only the destination agent can read it, and sends it through the relay.
-5. The destination agent decrypts the file, verifies its checksum, and places it safely.
+4. The agent seals each file so that only the destination agent can read it, signs a delivery manifest, and sends the sealed file through the relay.
+5. The destination agent verifies the sealed file against the manifest, decrypts it, and places it safely.
 6. Each delivery reports its result, and each state change writes an audit event.
 7. Source clean-up happens only after every delivery succeeds. Files that match no path stay in place and raise an alert.
 
