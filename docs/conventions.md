@@ -35,6 +35,28 @@ During 0.x, the REST API can break while staying on `/api/v1/`, if the release n
 - Tasks, bugs, and open decisions are GitHub issues, grouped by milestone. Milestones M0 to M4 match the PRD.
 - Issues that are not tied to a milestone use the `before-public` or `before-sale` label.
 - Decisions, design, and rules stay in repo files, so they are versioned and reviewed.
+- All open issues are on the [Meerkat MFT Project](https://github.com/orgs/meerkat-mft/projects/1), with the status Todo, In Progress, or Done. Add new issues to it when you create them.
+
+### Working on an issue
+
+1. Pick an issue from Todo, normally from the current milestone, and set it to In Progress.
+2. Create a short-lived branch from `main`.
+3. Open a pull request with `Closes #n` in its description.
+4. Merge after CI passes, using a squash merge, and delete the branch.
+5. Confirm that the issue is closed and shows as Done.
+
+Work that doesn't change the repo, such as DNS or account setup, is closed on the issue once it's verified.
+
+## Website
+
+- mmft.dev is a static site in the public repo [`meerkat-mft/meerkat-mft.github.io`](https://github.com/meerkat-mft/meerkat-mft.github.io), served by GitHub Pages from `main`.
+- The site uses no JavaScript, tracking, or third-party requests. Fonts are self-hosted.
+- Public copy must match the current design and say when something is planned rather than built.
+- Public copy names no specific companies or products, including competitors.
+
+## Interface design
+
+- All Meerkat interfaces are dark only. Light mode is banned, so don't add or propose a light theme.
 
 ## Git workflow
 
