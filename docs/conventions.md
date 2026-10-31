@@ -40,6 +40,7 @@ During 0.x, the REST API can break while staying on `/api/v1/`, if the release n
 ## Releases
 
 - A pushed tag triggers CI to build binaries and container images, generate the SBOM, sign everything, and publish a GitHub release.
+- Release automation uses GoReleaser, with signing through Sigstore Cosign.
 - `CHANGELOG.md` follows the Keep a Changelog format.
 - Security fixes get their own advisory.
 
@@ -52,7 +53,7 @@ During 0.x, the REST API can break while staying on `/api/v1/`, if the release n
 ## Toolchain and dependencies
 
 - Use the current stable Go version, and keep it up to date.
-- Pin dependencies, and update them through automated pull requests.
+- Pin dependencies, and update them through automated pull requests. GitHub Actions are pinned to full commit hashes.
 - Scan with `govulncheck` in CI.
 - Add dependencies sparingly, especially in the agent.
 - Review any dependency that touches cryptography.

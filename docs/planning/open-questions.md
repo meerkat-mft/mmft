@@ -14,6 +14,11 @@ The product questions are answered in the [PRD](prd.md) and the [ADRs](../adr/).
 - **Project accounts.** Claim `meerkat-mft` on GitHub and Docker Hub, because `mmft` is already taken on both. Reserve `mmft` on npm and PyPI if the release plan needs them.
 - **Go module domain.** Make mmft.dev answer over HTTPS and serve the `go-import` tag that Go tooling needs for `mmft.dev/mmft`. It timed out on 2026-10-31.
 
+## When the repo goes public
+
+- **Merge protection.** Require CI to pass on `main`. GitHub's free plan does not offer this for private repos, so until then it is a manual rule.
+- **Vulnerability reports.** Turn on private vulnerability reporting.
+
 ## M1 and M2
 
 - **Relay limits.** What are the bandwidth, concurrency, and per-agent limits?
