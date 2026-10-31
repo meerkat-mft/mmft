@@ -6,7 +6,7 @@ M0 is done when the design is written down and CI passes. Do these in order. Hou
 
 - [x] **1. Create the repo (1 hour).** Create the `meerkat-mft` GitHub organization, require 2FA, and push a private `mmft` repo.
 - [x] **2. Add project files (2 hours).** Add the AGPL `LICENSE`, `README.md`, `CHANGELOG.md`, and `SECURITY.md` with how to report a vulnerability.
-- [ ] **3. Set up Go (2 hours).** Install Go, initialize the `mmft.dev/mmft` module, and add empty `orchestrator`, `relay`, `agent`, and `mmft` commands under `cmd/`.
+- [x] **3. Set up Go (2 hours).** Install Go, initialize the `mmft.dev/mmft` module, and add empty `mmft`, `mmft-orchestrator`, `mmft-relay`, and `mmft-agent` commands under `cmd/`.
 - [ ] **4. Add CI (4 hours).** Run build, tests, linting, `govulncheck`, and SBOM generation on every push, add automated dependency pull requests, and require CI to pass before merging. Confirm the release tooling, likely GoReleaser and Cosign, so that signed releases can start in M1.
 - [ ] **5. Point the Go module at the repo (1 hour).** Make mmft.dev answer over HTTPS and serve the `go-import` tag.
 
