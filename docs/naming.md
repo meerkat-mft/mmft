@@ -10,7 +10,7 @@ Use **Meerkat MFT** in human-facing text and **`mmft`** in everything technical,
 | Orchestrator binary and container | `mmft-orchestrator` |
 | Relay binary and container | `mmft-relay` |
 | Agent binary and container | `mmft-agent` |
-| Console container, if separate | `mmft-console` |
+| Console container | `mmft-console` |
 
 Each service is its own binary, so orchestrator code never ships on systems that run only an agent.
 

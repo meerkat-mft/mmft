@@ -27,11 +27,11 @@ An agent shipped inside the Meerkat stack, used to reach systems that have no ag
 _Avoid_: Built-in worker
 
 **Console**:
-The web interface administrators use to work with the orchestrator through its API.
+The web interface administrators use to build flows and monitor the system through the API. It cannot approve flows or receive credentials.
 _Avoid_: Admin UI, dashboard, portal
 
 **CLI**:
-The command-line tool for working with the orchestrator through its API.
+The signed command-line tool for working with the orchestrator through its API, and the only place to approve flows and enter credentials.
 
 **API**:
 The public REST interface that exposes every orchestrator capability to the console, the CLI, and third-party tools.
@@ -63,6 +63,10 @@ _Avoid_: Data flow, job, pipeline, workflow
 **Flow version**:
 One immutable, signed revision of a flow.
 _Avoid_: Revision, draft
+
+**Approval**:
+An administrator's signature on a flow version, made in the CLI, without which agents will not run it.
+_Avoid_: Publish, sign-off
 
 **Card**:
 One element on the flow canvas, such as a trigger, source, condition, or destination.

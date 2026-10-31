@@ -32,6 +32,7 @@ Recent mass exploitation of internet-facing MFT servers is the problem this desi
 - The local files connector, behind a connector interface designed for later connectors.
 - Agent-to-agent delivery through the blind relay, with end-to-end encryption.
 - Flows drawn on a canvas as trees of cards, stored as signed, versioned JSON.
+- Flow approval in the signed CLI, with the console limited to drafting flow versions. See [ADR 0009](../adr/0009-trusted-approvals-in-the-cli.md).
 - Triggers: schedule, file arrival, and API call.
 - Selection rules and conditions over file metadata, including a rule builder and CEL expressions.
 - Safe pickup through polling, a stable-size check, and an optional marker file.
@@ -53,7 +54,7 @@ Everything below is on the [roadmap](roadmap.md) unless marked never.
 
 - Remote connectors: SFTP, then S3, Azure Blob, and SMB.
 - The bundled agent, which only matters once remote connectors exist.
-- Sealed credentials, which ship with the first remote connector.
+- Sealed credentials, entered through the CLI, which ship with the first remote connector.
 - PGP encryption and decryption.
 - Staging storage as a route between agents.
 - OIDC, SCIM, custom roles, and four-eyes approval.

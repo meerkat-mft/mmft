@@ -23,6 +23,7 @@ M0: Foundations. Work is tracked in [GitHub issues](https://github.com/meerkat-m
 - Never commit real credentials, private keys, or customer files, including as test fixtures.
 - Never let the orchestrator read file contents or credentials. Any change that weakens this needs a new ADR.
 - Every console feature uses the public API.
+- Flow approval and credential entry happen only in the signed CLI, never in the console. Any change that weakens this needs a new ADR.
 - Never write custom cryptography.
 - Follow the issue workflow in the conventions, and keep the Project board up to date.
 - All interfaces are dark only. Never add or propose a light theme.

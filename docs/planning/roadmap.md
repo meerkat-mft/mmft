@@ -44,6 +44,7 @@ This is the first release to show a design partner.
 ### 0.7: Enterprise access
 
 - OIDC sign-in
+- Passkey sign-in
 - SCIM provisioning
 - Custom roles
 - Four-eyes approval for flow changes
