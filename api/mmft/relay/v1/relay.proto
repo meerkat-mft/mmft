@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+// Package mmft.relay.v1 moves sealed files between agents. Draft for M1. The
+// relay sees only sealed bytes and stores nothing.
+package mmft.relay.v1;
+
+option go_package = "mmft.dev/mmft/gen/relay/v1;relayv1";
+
+// RelayService pairs a sending agent with a receiving agent for one delivery.
+// Both sides connect outbound, and neither accepts a connection.
+service RelayService {
+  // Send streams a sealed file. The first message must be a SendOpen.
+  rpc Send(stream SendRequest) returns (stream SendResponse);
+
+  // Receive streams a sealed file. The first message states where to resume.
+  rpc Receive(ReceiveRequest) returns (stream ReceiveResponse);
+}
+
+message SendRequest {
+  oneof message {
+    SendOpen open = 1;
+    bytes data = 2;
+  }
+}
+
+message SendOpen {
+  bytes ticket = 1;
+  string delivery_id = 2;
+  uint64 total_bytes = 3;
+}
+
+message SendResponse {
+  oneof message {
+    // The receiver is connected, and sending starts at this byte offset.
+    uint64 start_offset = 1;
+    // Bytes the receiver has confirmed writing to its spool.
+    uint64 acknowledged_bytes = 2;
+  }
+}
+
+message ReceiveRequest {
+  bytes ticket = 1;
+  string delivery_id = 2;
+  // Bytes of the sealed file already in the receiver's spool.
+  uint64 resume_offset = 3;
+}
+
+message ReceiveResponse {
+  bytes data = 1;
+}

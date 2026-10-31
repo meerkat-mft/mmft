@@ -1,0 +1,516 @@
+openapi: 3.1.0
+info:
+  title: Meerkat MFT API
+  version: 0.0.0-draft
+  description: |
+    Draft of the orchestrator's public REST API for M1 and M2. Later milestones add users, roles, tokens, schedules, and webhooks.
+
+    Everything reported by an agent is untrusted input. The orchestrator validates it, and clients must treat it as data, never as markup.
+  license:
+    name: AGPL-3.0-only
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+servers:
+  - url: https://orchestrator.example.internal/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: System
+    description: Service status.
+  - name: Agents
+    description: Enrollment and agent state.
+  - name: Flows
+    description: Flows, drafts, and approved versions.
+  - name: Runs
+    description: Runs and deliveries.
+  - name: Audit
+    description: Audit evidence.
+  - name: Revocations
+    description: Signed revocations.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check service health
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: The service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  version:
+                    type: string
+        '503':
+          $ref: '#/components/responses/Problem'
+  /agents:
+    get:
+      operationId: listAgents
+      summary: List agents
+      tags: [Agents]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of agents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Agent'
+                  next_cursor:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem'
+  /agents/enrollment-tokens:
+    post:
+      operationId: createEnrollmentToken
+      summary: Create a one-use enrollment token
+      tags: [Agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_name, workspace]
+              properties:
+                agent_name:
+                  $ref: '#/components/schemas/Name'
+                workspace:
+                  $ref: '#/components/schemas/Name'
+      responses:
+        '201':
+          description: The token, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expires_at]
+                properties:
+                  token:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+  /agents/{agent_id}:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    get:
+      operationId: getAgent
+      summary: Get an agent
+      tags: [Agents]
+      responses:
+        '200':
+          description: The agent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /agents/{agent_id}/identity:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    put:
+      operationId: putAgentIdentity
+      summary: Store a signed agent identity
+      description: The CLI signs the identity. The orchestrator stores the statement and passes it to agents, which verify it.
+      tags: [Agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedStatement'
+      responses:
+        '204':
+          description: The identity was stored.
+        '400':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /flows:
+    get:
+      operationId: listFlows
+      summary: List flows
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of flows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Flow'
+                  next_cursor:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem'
+  /flows/{flow_id}/versions:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    post:
+      operationId: createFlowVersion
+      summary: Save a draft flow version
+      description: The server validates the flow. A draft never runs until it is approved.
+      tags: [Flows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowDefinition'
+      responses:
+        '201':
+          description: The draft version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowVersion'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /flows/{flow_id}/versions/{version}:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+      - $ref: '#/components/parameters/Version'
+    get:
+      operationId: getFlowVersion
+      summary: Get a flow version
+      tags: [Flows]
+      responses:
+        '200':
+          description: The flow version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowVersion'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /flows/{flow_id}/versions/{version}/approval:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+      - $ref: '#/components/parameters/Version'
+    put:
+      operationId: putFlowApproval
+      summary: Store a signed approval
+      description: The CLI signs the approval locally. The console has no way to create one.
+      tags: [Flows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedStatement'
+      responses:
+        '204':
+          description: The approval was stored.
+        '400':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /flows/{flow_id}/runs:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    post:
+      operationId: startRun
+      summary: Start a run
+      tags: [Runs]
+      responses:
+        '202':
+          description: The run was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      operationId: getRun
+      summary: Get a run and its deliveries
+      tags: [Runs]
+      responses:
+        '200':
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /audit/checkpoints:
+    get:
+      operationId: listAuditCheckpoints
+      summary: List audit checkpoints
+      tags: [Audit]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of checkpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignedStatement'
+                  next_cursor:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem'
+  /revocations:
+    post:
+      operationId: createRevocation
+      summary: Publish a signed revocation
+      tags: [Revocations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedStatement'
+      responses:
+        '204':
+          description: The revocation was stored.
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        maxLength: 256
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    FlowId:
+      name: flow_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Version:
+      name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    Problem:
+      description: An error, in RFC 9457 format.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Id:
+      type: string
+      pattern: '^[a-z0-9_-]{1,64}$'
+    Name:
+      type: string
+      pattern: '^[A-Za-z0-9._-]{1,128}$'
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+    SignedStatement:
+      type: object
+      description: A DSSE envelope, as defined in ADR 0012.
+      required: [payload, payloadType, signatures]
+      properties:
+        payload:
+          type: string
+          contentEncoding: base64
+        payloadType:
+          type: string
+          maxLength: 128
+        signatures:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            required: [sig]
+            properties:
+              keyid:
+                type: string
+                maxLength: 128
+              sig:
+                type: string
+                contentEncoding: base64
+    Agent:
+      type: object
+      required: [id, name, workspace, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/Name'
+        workspace:
+          $ref: '#/components/schemas/Name'
+        status:
+          type: string
+          enum: [pending_approval, online, offline, revoked, identity_expired]
+        agent_version:
+          type: string
+          maxLength: 64
+        identity_expires_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+    Flow:
+      type: object
+      required: [id, name, workspace]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/Name'
+        workspace:
+          $ref: '#/components/schemas/Name'
+        approved_version:
+          type: integer
+        latest_version:
+          type: integer
+        retired:
+          type: boolean
+    FlowDefinition:
+      type: object
+      description: The flow's tree of cards. The card schema is settled during M2.
+      required: [schema_version, cards]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        cards:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+    FlowVersion:
+      type: object
+      required: [flow_id, version, status, definition]
+      properties:
+        flow_id:
+          $ref: '#/components/schemas/Id'
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [draft, approved, superseded]
+        definition:
+          $ref: '#/components/schemas/FlowDefinition'
+        approval:
+          $ref: '#/components/schemas/SignedStatement'
+    Run:
+      type: object
+      required: [id, flow_id, flow_version, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        flow_id:
+          $ref: '#/components/schemas/Id'
+        flow_version:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, succeeded, partial_failure, failed, cancelled]
+        deliveries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Delivery'
+    Delivery:
+      type: object
+      required: [id, file_name, status, evidence]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        file_name:
+          type: string
+          description: Reported by an agent. Untrusted, and may be personal data.
+          maxLength: 1024
+        size_bytes:
+          type: integer
+        sealed_sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        status:
+          type: string
+          enum: [pending, claimed, transferring, verifying, retry_wait, succeeded, failed, cancelled]
+        evidence:
+          type: string
+          enum: [none, source_only, verified]
+        error_code:
+          type: string
+          maxLength: 64

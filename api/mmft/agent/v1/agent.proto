@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+// Package mmft.agent.v1 is the protocol between agents and the orchestrator.
+// Draft for M1 and M2. Signed objects are DSSE envelopes carried as opaque
+// bytes, so the orchestrator stores and forwards them without trusting them.
+package mmft.agent.v1;
+
+option go_package = "mmft.dev/mmft/gen/agent/v1;agentv1";
+
+// EnrollmentService is the only service reachable without a connection
+// certificate. A token authorizes one call.
+service EnrollmentService {
+  // Enroll registers a new agent and returns its first connection certificate.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+}
+
+// AgentService carries all work over one long-lived outbound stream.
+service AgentService {
+  // Connect opens the stream. Clients authenticate with a connection
+  // certificate, and the first message must be a Hello.
+  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+
+  // RenewCertificate replaces the connection certificate before it expires.
+  rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
+}
+
+message EnrollRequest {
+  string token = 1;
+  string agent_name = 2;
+  // Public keys the agent generated locally.
+  bytes ed25519_public_key = 3;
+  bytes mldsa65_public_key = 4;
+  // The age hybrid recipient for sealed files.
+  string encryption_recipient = 5;
+  // PKCS#10 request for the connection certificate.
+  bytes certificate_request = 6;
+}
+
+message EnrollResponse {
+  string agent_id = 1;
+  bytes connection_certificate = 2;
+}
+
+message RenewCertificateRequest {
+  bytes certificate_request = 1;
+}
+
+message RenewCertificateResponse {
+  bytes connection_certificate = 1;
+}
+
+message ConnectRequest {
+  oneof message {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    LeaseClaim lease_claim = 3;
+    DeliveryUpdate delivery_update = 4;
+    AuditBatch audit_batch = 5;
+    AgentIdentityRequest identity_request = 6;
+  }
+}
+
+message ConnectResponse {
+  oneof message {
+    Welcome welcome = 1;
+    WorkOffer work_offer = 2;
+    LeaseResult lease_result = 3;
+    FlowVersion flow_version = 4;
+    AgentIdentity agent_identity = 5;
+    Revocation revocation = 6;
+    Cancel cancel = 7;
+    RelayTicket relay_ticket = 8;
+  }
+}
+
+// Hello states what the agent runs, so version gaps can be noticed.
+message Hello {
+  uint32 protocol_version = 1;
+  string agent_version = 2;
+  // SHA-256 of the local allowlist file.
+  bytes allowlist_hash = 3;
+  // Highest approved version accepted for each flow.
+  map<string, uint64> flow_versions = 4;
+  // Identity statement, if the agent has one yet.
+  bytes identity_statement = 5;
+  // Next audit batch position, so the orchestrator can spot a gap.
+  uint64 next_audit_position = 6;
+}
+
+message Welcome {
+  uint32 protocol_version = 1;
+  string orchestrator_version = 2;
+}
+
+message Heartbeat {
+  // Whether the agent is too full to take work.
+  bool at_capacity = 1;
+  uint64 free_disk_bytes = 2;
+}
+
+// WorkOffer tells an agent that a run needs it. The agent verifies the flow
+// version statement and its allowlist before it claims the work.
+message WorkOffer {
+  string run_id = 1;
+  string flow_id = 2;
+  uint64 flow_version = 3;
+  string work_id = 4;
+}
+
+message LeaseClaim {
+  string work_id = 1;
+}
+
+message LeaseResult {
+  string work_id = 1;
+  bool granted = 2;
+  // Seconds until the lease expires unless it is extended by an update.
+  uint32 lease_seconds = 3;
+}
+
+message Cancel {
+  string work_id = 1;
+  string reason = 2;
+}
+
+enum DeliveryState {
+  DELIVERY_STATE_UNSPECIFIED = 0;
+  DELIVERY_STATE_SEALING = 1;
+  DELIVERY_STATE_TRANSFERRING = 2;
+  DELIVERY_STATE_VERIFYING = 3;
+  DELIVERY_STATE_SUCCEEDED = 4;
+  DELIVERY_STATE_RETRY_WAIT = 5;
+  DELIVERY_STATE_FAILED = 6;
+}
+
+// DeliveryUpdate reports progress and extends the lease. File contents and
+// raw error output must never be placed in any field.
+message DeliveryUpdate {
+  string work_id = 1;
+  string delivery_id = 2;
+  DeliveryState state = 3;
+  // A stable code from the published error list.
+  string error_code = 4;
+  uint64 bytes_done = 5;
+  // Signed delivery manifest from the source agent.
+  bytes manifest_statement = 6;
+  // Signed delivery receipt from the destination agent.
+  bytes receipt_statement = 7;
+}
+
+// RelayTicket lets an agent connect to the relay for one delivery.
+message RelayTicket {
+  string delivery_id = 1;
+  bytes ticket = 2;
+  string relay_address = 3;
+}
+
+// AuditBatch carries events and the signed statement that covers them.
+message AuditBatch {
+  uint64 first_position = 1;
+  uint64 event_count = 2;
+  repeated bytes events = 3;
+  bytes batch_statement = 4;
+}
+
+message AgentIdentityRequest {
+  string agent_id = 1;
+}
+
+message AgentIdentity {
+  bytes identity_statement = 1;
+}
+
+message FlowVersion {
+  bytes version_statement = 1;
+}
+
+message Revocation {
+  bytes revocation_statement = 1;
+}

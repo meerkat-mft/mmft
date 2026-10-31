@@ -11,6 +11,8 @@ M0: Foundations. Work is tracked in [GitHub issues](https://github.com/meerkat-m
 - [GLOSSARY.md](GLOSSARY.md): domain glossary. Use these terms exactly in docs, code, and conversation. Add or correct a term here when its meaning is settled.
 - [docs/naming.md](docs/naming.md): names for binaries, services, paths, config, APIs, and CLI commands.
 - [docs/conventions.md](docs/conventions.md): versioning, upgrades, work tracking, the website, git workflow, releases, support, and dependencies. Follow these rules.
+- [docs/deployment.md](docs/deployment.md): supported network topologies and handling of untrusted metadata.
+- [api/](api/): draft OpenAPI spec and agent and relay protobuf definitions. Lint them with `buf` and Redocly.
 - [docs/adr/](docs/adr/): architecture decisions. One file per decision, copied from `0000-template.md` and numbered in sequence.
 - [docs/planning/prd.md](docs/planning/prd.md): product scope, the MVP, and milestones.
 - [docs/planning/roadmap.md](docs/planning/roadmap.md): stages and releases after the MVP.
