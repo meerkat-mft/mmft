@@ -9,6 +9,7 @@ M0: Foundations. See the milestones in [docs/planning/prd.md](docs/planning/prd.
 ## Where things live
 
 - [GLOSSARY.md](GLOSSARY.md): domain glossary. Use these terms exactly in docs, code, and conversation. Add or correct a term here when its meaning is settled.
+- [docs/naming.md](docs/naming.md): names for binaries, services, paths, config, APIs, and CLI commands.
 - [docs/adr/](docs/adr/): architecture decisions. One file per decision, copied from `0000-template.md` and numbered in sequence.
 - [docs/planning/prd.md](docs/planning/prd.md): product scope, version 1, roadmap, and milestones.
 - [docs/planning/open-questions.md](docs/planning/open-questions.md): questions still to settle.

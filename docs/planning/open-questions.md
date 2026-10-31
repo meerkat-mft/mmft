@@ -11,6 +11,8 @@ The product questions are answered in the [PRD](prd.md) and the [ADRs](../adr/).
 - **Flow signing.** How does an administrator's signature work from a browser and from an API client?
 - **Agent allowlist format.** Where does it live, and how is it changed on the system itself?
 - **Toolchain.** Install Go on this machine, and choose the CI provider.
+- **Name availability.** Check that `mmft` is free in package managers and container registries before the first release.
+- **Go module domain.** Serve the redirect page on mmft.dev that Go tooling needs for `mmft.dev/mmft`.
 
 ## M1 and M2
 
