@@ -1,10 +1,10 @@
 # Meerkat MFT
 
-Meerkat MFT (`mmft`, domain mmft.dev) is a managed file transfer (MFT) platform. The design is agreed, and there is no application code yet.
+Meerkat MFT (`mmft`, domain mmft.dev) is a managed file transfer (MFT) platform. The design is agreed, and application code is starting.
 
 ## Current phase
 
-M0: Foundations. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/mmft/issues), milestones, and the [Project board](https://github.com/orgs/meerkat-mft/projects/1). Finish the M0 milestone before writing product code.
+M1: Skeleton. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/mmft/issues), milestones, and the [Project board](https://github.com/orgs/meerkat-mft/projects/1). Work through the M1 milestone in dependency order, keeping to the milestone's scope. Flow signing, allowlists, and the state machine come in M2.
 
 ## Where things live
 
