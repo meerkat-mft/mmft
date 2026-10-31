@@ -23,7 +23,7 @@ Recent mass exploitation of internet-facing MFT servers is the problem this desi
 6. No file moves without evidence.
 7. Trust and reliability come before interface polish.
 
-## Version 1 scope
+## MVP scope
 
 ### In scope
 
@@ -47,9 +47,9 @@ Recent mass exploitation of internet-facing MFT servers is the problem this desi
 - A control matrix mapping product controls to GDPR, NIS2, and DORA obligations.
 - SBOMs, signed releases, admin-started agent updates, and a vulnerability process.
 
-### Out of scope for version 1
+### Out of scope for the MVP
 
-Everything below is on the roadmap unless marked never.
+Everything below is on the [roadmap](roadmap.md) unless marked never.
 
 - Remote connectors: SFTP, then S3, Azure Blob, and SMB.
 - The bundled agent, which only matters once remote connectors exist.
@@ -64,7 +64,7 @@ Everything below is on the roadmap unless marked never.
 - Multi-tenancy and SaaS.
 - Never: loops, joins with waiting, or custom scripts in flows.
 
-### Known limitations of version 1
+### Known limitations of the MVP
 
 - Files can only move between systems running an agent. A usual exchange with a partner's SFTP server needs the SFTP connector first.
 - All traffic between two systems passes through the relay, so its bandwidth sets throughput.
@@ -88,6 +88,8 @@ The EU Cyber Resilience Act may apply directly once Meerkat is sold. Confirm thi
 
 ## Milestones
 
+M4 completes the MVP, released as version 0.4 and still in beta. Version 1.0 comes later, when the maintainer declares a stable release. Later releases are in the [roadmap](roadmap.md), and the next tasks are in [m0-tasks.md](m0-tasks.md).
+
 Estimates are guesses. Every milestone must pass failure tests covering killed processes, dropped networks, full disks, and expired certificates.
 
 | Milestone | Scope | Done when | Estimate |
@@ -96,7 +98,7 @@ Estimates are guesses. Every milestone must pass failure tests covering killed p
 | **M1: Skeleton** | Trust root, enrollment, mTLS stream, blind relay, one manual flow | A file moves between two lab VMs, and the orchestrator cannot read it | 2-3 months |
 | **M2: Reliable runs** | State machine, retries, resume, audit chain and export, allowlists, signed flows | Killing any component mid-delivery loses no file and no evidence | 2-3 months |
 | **M3: Operable** | Local auth with MFA, roles, schedules, triggers, rules, API tokens, console, read-only canvas | Flows run in the lab without touching the CLI | 4-6 months |
-| **M4: Version 1** | Editable canvas, backup and restore, webhooks, metrics, SIEM export, docs, control matrix | Two agents run real scheduled flows unattended for a month, and a restore has been tested | 2-3 months |
+| **M4: MVP** | Editable canvas, backup and restore, webhooks, metrics, SIEM export, docs, control matrix | Two agents run real scheduled flows unattended for a month, and a restore has been tested | 2-3 months |
 
 ## Repository layout
 
