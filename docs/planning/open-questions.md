@@ -11,8 +11,8 @@ The product questions are answered in the [PRD](prd.md) and the [ADRs](../adr/).
 - **Flow signing.** How does an administrator's signature work from a browser and from an API client?
 - **Agent allowlist format.** Where does it live, and how is it changed on the system itself?
 - **Toolchain.** Install Go on this machine, and choose the CI provider.
-- **Name availability.** Check that `mmft` is free in package managers and container registries before the first release.
-- **Go module domain.** Serve the redirect page on mmft.dev that Go tooling needs for `mmft.dev/mmft`.
+- **Project accounts.** Claim `meerkat-mft` on GitHub and Docker Hub, because `mmft` is already taken on both. Reserve `mmft` on npm and PyPI if the release plan needs them.
+- **Go module domain.** Make mmft.dev answer over HTTPS and serve the `go-import` tag that Go tooling needs for `mmft.dev/mmft`. It timed out on 2026-10-31.
 
 ## M1 and M2
 
@@ -23,5 +23,5 @@ The product questions are answered in the [PRD](prd.md) and the [ADRs](../adr/).
 ## Before any sale
 
 - **Cyber Resilience Act.** Verify the dates and whether Meerkat counts as a manufactured product, with legal advice.
-- **Trademark.** Search "Meerkat" in software before spending on branding.
+- **Trademark.** Search "Meerkat" and "Meerkat MFT" in Nice classes 9 and 42 on the EUIPO and BOIP registers before spending on branding. Web searches found US MEERKAT marks in security software, but the EU registers have not been checked.
 - **Contributor agreement.** Choose one before accepting outside code.
