@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Meerkat MFT">
+  <title>Meerkat MFT</title>
+  <defs><clipPath id="edge"><circle cx="256" cy="256" r="248"/></clipPath></defs>
+  <circle cx="256" cy="256" r="248" fill="#14202E"/>
+  <g clip-path="url(#edge)"><g transform="translate(-36 -72) scale(1.12)">
+    <path fill="#E2A04A" stroke="#E2A04A" stroke-width="10" stroke-linejoin="round" d="M400 229 L308 158 Q298 150 284 148 L246 146 Q226 146 214 160 L198 180 Q190 190 192 202 L204 272 L156 530 L322 530 L300 332 L292 274 Z"/>
+    <path fill="#F6E3C2" stroke="#F6E3C2" stroke-width="10" stroke-linejoin="round" d="M292 274 L300 332 L322 530 L254 530 L254 356 Q256 330 272 298 Z"/>
+    <path fill="#14202E" d="M204 184 Q206 166 232 166 Q236 190 216 208 Q206 204 204 184 Z"/>
+    <path fill="#14202E" d="M254 198 Q290 190 326 216 Q292 234 262 222 Q246 212 254 198 Z"/>
+    <path fill="#8A4F1D" stroke="#8A4F1D" stroke-width="10" stroke-linejoin="round" d="M372 207 L400 229 L368 243 Q362 224 372 207 Z"/>
+  </g></g>
+</svg>
