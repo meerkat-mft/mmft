@@ -22,6 +22,7 @@ Each service is its own binary, so orchestrator code never ships on systems that
 | Windows service | Name `mmft-agent`, display name "Meerkat MFT Agent" |
 | OS user and group | `mmft` |
 | Linux config | `/etc/mmft/<service>.yaml`, such as `/etc/mmft/agent.yaml` |
+| Agent allowlist | `/etc/mmft/allowlist.yaml` on Linux |
 | Linux data | `/var/lib/mmft/` |
 | Linux logs | `/var/log/mmft/` |
 | Windows config and data | `C:\ProgramData\Meerkat MFT\` |

@@ -38,7 +38,7 @@ This model covers the MVP design and the roadmap items that change it. It starts
 - Read all metadata.
 - Stop all work.
 - Trigger valid flows at the wrong time, or repeat them.
-- Replay an older signed flow version (F2).
+- Withhold new flow versions, so that agents keep running the last approved one.
 - Corrupt audit records made since the last audit checkpoint.
 - Show false state to administrators, or get them to approve a flow based on it. The CLI shows the real change (F1).
 - Withhold or swap public keys, unless agents verify them against the trust root.
@@ -116,12 +116,12 @@ Priority: **Blocker** must be solved in the M0 design. **Required** must be buil
 | ID | Finding | Priority | Goes to |
 | --- | --- | --- | --- |
 | F1 | **Console trust.** Code served to a browser can be altered by whoever serves it, which could capture credentials and misdirect signing. Resolved by [ADR 0009](adr/0009-trusted-approvals-in-the-cli.md): approval and credential entry move to the signed CLI, and the console is a separate container. | Resolved | ADR 0009 |
-| F2 | **Replay and rollback.** A signature alone doesn't stop an older signed flow version or agent release from being reused. Agents need to track the newest version they have accepted, and flow versions should be revocable. | Blocker | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
+| F2 | **Replay and rollback.** A signature alone does not stop old flow versions or releases being reused. Resolved by [ADR 0012](adr/0012-signed-statements-and-flow-approval.md): agents refuse lower versions, and flows can be retired. | Resolved | ADR 0012 |
 | F3 | **Relay tampering.** Reordering, truncation, and replay must all fail. Resolved by [ADR 0010](adr/0010-age-sealed-files.md): the age format protects chunk order and truncation, and a signed manifest binds each sealed file to one delivery. | Resolved | ADR 0010 |
-| F4 | **Self-reported evidence.** Audit events from one agent prove only what that agent claims. A delivery record should need signed statements from both agents, with the destination's checksum computed independently. | Required, M2 | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
+| F4 | **Self-reported evidence.** One agent's report proves only its own claim. Resolved by [ADR 0014](adr/0014-audit-batches-and-delivery-receipts.md): a verified delivery needs signed statements from both agents. Two colluding agents remain possible. | Resolved | ADR 0014 |
 | F5 | **Hostile metadata.** Everything an agent reports is untrusted input to the orchestrator and console. Validate it on the server, escape it in the console, and set a strict content security policy. | Required, M3 | [#9](https://github.com/meerkat-mft/mmft/issues/9) |
-| F6 | **Allowlist protection.** The agent's OS user must not be able to write its own allowlist or configuration. Each agent needs least-privilege packaging on Linux and Windows. | Required, M2 | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
-| F7 | **One administrator can do everything.** In the MVP, one stolen administrator identity can change and sign a flow. Four-eyes approval is on the roadmap, so the signing design must allow a second signature later. | Blocker for the design | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
+| F6 | **Allowlist protection.** A compromised agent must not widen its own allowlist. Designed in [ADR 0013](adr/0013-agent-allowlists.md), with packaging still to build on Linux and Windows. | Required, M2 | ADR 0013 |
+| F7 | **One administrator can do everything.** In the MVP, one stolen administrator key can approve a flow. [ADR 0012](adr/0012-signed-statements-and-flow-approval.md) leaves room for four-eyes approval, set in the local allowlist file, which stays on the roadmap. | Accepted for the MVP | Roadmap |
 | F8 | **TOTP and API tokens.** TOTP can be phished, and long-lived tokens outlast a session. Passkeys are on the roadmap. Keep tokens scoped, expiring, and revocable. | Required, M3 | [#24](https://github.com/meerkat-mft/mmft/issues/24) |
 | F9 | **Auth data at rest.** Hash API tokens, encrypt TOTP secrets with a key held outside the database, and include backups in this rule. | Required, M3 | [#25](https://github.com/meerkat-mft/mmft/issues/25) |
 | F10 | **Key hierarchy and recovery.** Keys need to work day to day without an online root, with rotation and a recovery path. Resolved by [ADR 0011](adr/0011-trust-root-and-key-hierarchy.md): administrator keys in the CLI sign agent identities, and a lost root means trusting a new one on each host. | Resolved | ADR 0011 |

@@ -114,6 +114,18 @@ _Avoid_: Job, execution, instance
 One file going to one destination within a run, with its own retries and result.
 _Avoid_: Transfer, transmission
 
+**Signed statement**:
+A DSSE envelope holding one signed Meerkat object, such as a flow version or delivery manifest.
+_Avoid_: Signed blob, attestation
+
+**Delivery receipt**:
+The destination agent's signed statement of what it received and the result.
+_Avoid_: Ack, confirmation
+
+**Audit batch**:
+An agent's signed statement covering a run of its audit events.
+_Avoid_: Log bundle
+
 **Sealed file**:
 A file encrypted for one destination agent, used for one delivery.
 _Avoid_: Ciphertext file, encrypted blob

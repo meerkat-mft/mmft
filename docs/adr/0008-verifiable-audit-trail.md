@@ -1,6 +1,6 @@
 # 0008. The audit trail is verifiable from outside the database
 
-Status: Accepted
+Status: Accepted, with per-event signing superseded by [ADR 0014](0014-audit-batches-and-delivery-receipts.md)
 Date: 2026-10-31
 
 ## Context
