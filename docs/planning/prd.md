@@ -29,6 +29,7 @@ Recent mass exploitation of internet-facing MFT servers is the problem this desi
 
 - Orchestrator, relay, agent, console, API, and CLI, deployed with Docker Compose.
 - Agents for Linux and Windows, one per system, connecting outbound only.
+- Unattended agent rollout from scripts such as Ansible, DSC, Bash, or PowerShell, including enrollment and renewal. See [ADR 0011](../adr/0011-trust-root-and-key-hierarchy.md).
 - The local files connector, behind a connector interface designed for later connectors.
 - Agent-to-agent delivery through the blind relay, with end-to-end encryption.
 - Flows drawn on a canvas as trees of cards, stored as signed, versioned JSON.

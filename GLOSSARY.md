@@ -136,6 +136,22 @@ _Avoid_: Mixed result
 The offline, customer-held key from which all trust in agents and signatures derives.
 _Avoid_: Master key, root secret
 
+**Administrator key**:
+A key held in one administrator's CLI, certified by the trust root, that approves flows and signs agent identities and automation keys.
+_Avoid_: Signing key, user key
+
+**Automation key**:
+A limited key held by a deployment pipeline that signs agent identities in one workspace and cannot approve flows.
+_Avoid_: Service key, CI key
+
+**Agent identity**:
+The signed record binding an agent to its public keys, which other parties verify back to the trust root.
+_Avoid_: Agent certificate, agent ID
+
+**Connection certificate**:
+A short-lived certificate that lets a component connect, and proves nothing about end-to-end trust.
+_Avoid_: Agent certificate, mTLS key
+
 **Enrollment**:
 The process that admits a new agent to the Meerkat stack.
 _Avoid_: Registration, onboarding, pairing

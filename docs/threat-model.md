@@ -88,8 +88,8 @@ A root-level compromise of the host is out of scope for prevention. Limiting the
 ### Compromised trust root or signing keys
 
 - **Trust root:** total loss of the design's guarantees. An attacker can enroll rogue agents and read relayed files.
-- **Lost trust root:** every agent must be enrolled again unless recovery is designed (F10).
-- **Key used to sign agents:** if it lives on the orchestrator, ADR 0003's guarantee fails (F10).
+- **Lost trust root:** existing keys work until they expire, and each host must then trust a new root (F10).
+- **Administrator key:** the attacker can approve flows and sign agent identities until the key is revoked or expires, within agent allowlists (F10).
 
 ### Supply chain
 
@@ -124,7 +124,7 @@ Priority: **Blocker** must be solved in the M0 design. **Required** must be buil
 | F7 | **One administrator can do everything.** In the MVP, one stolen administrator identity can change and sign a flow. Four-eyes approval is on the roadmap, so the signing design must allow a second signature later. | Blocker for the design | [#8](https://github.com/meerkat-mft/mmft/issues/8) |
 | F8 | **TOTP and API tokens.** TOTP can be phished, and long-lived tokens outlast a session. Passkeys are on the roadmap. Keep tokens scoped, expiring, and revocable. | Required, M3 | [#24](https://github.com/meerkat-mft/mmft/issues/24) |
 | F9 | **Auth data at rest.** Hash API tokens, encrypt TOTP secrets with a key held outside the database, and include backups in this rule. | Required, M3 | [#25](https://github.com/meerkat-mft/mmft/issues/25) |
-| F10 | **Key hierarchy and recovery.** The design needs an online-usable agent signing key that isn't on the orchestrator, with rotation, and a tested recovery path for a lost trust root. | Blocker | [#7](https://github.com/meerkat-mft/mmft/issues/7) |
+| F10 | **Key hierarchy and recovery.** Keys need to work day to day without an online root, with rotation and a recovery path. Resolved by [ADR 0011](adr/0011-trust-root-and-key-hierarchy.md): administrator keys in the CLI sign agent identities, and a lost root means trusting a new one on each host. | Resolved | ADR 0011 |
 | F11 | **Repo protection.** Enforce protected `main` and required reviews before anyone depends on a release, and keep the GitHub App limited to selected repos. | Required, M1 | [#16](https://github.com/meerkat-mft/mmft/issues/16) |
 | F12 | **"Nothing needs to face the internet" has limits.** Agents outside the customer's network must reach the orchestrator and relay somehow. Agents on other networks need a private link, or those services become exposed. Document supported topologies, and treat the public claim as depending on them. | Required, M1 | [#9](https://github.com/meerkat-mft/mmft/issues/9) |
 | F13 | **Metadata exposure.** A compromised orchestrator reveals file names and partners. File name masking is on the roadmap, and sensitive customers need to be told this plainly. | Accepted for the MVP | Roadmap |
