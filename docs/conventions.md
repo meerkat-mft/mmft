@@ -30,6 +30,12 @@ During 0.x, the REST API can break while staying on `/api/v1/`, if the release n
 - Each release upgrades from the previous release. Skipping versions means stepping through them.
 - Database migrations run forward only. Rolling back means restoring a backup.
 
+## Work tracking
+
+- Tasks, bugs, and open decisions are GitHub issues, grouped by milestone. Milestones M0 to M4 match the PRD.
+- Issues that are not tied to a milestone use the `before-public` or `before-sale` label.
+- Decisions, design, and rules stay in repo files, so they are versioned and reviewed.
+
 ## Git workflow
 
 - `main` always builds.

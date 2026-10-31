@@ -88,7 +88,7 @@ The EU Cyber Resilience Act may apply directly once Meerkat is sold. Confirm thi
 
 ## Milestones
 
-M4 completes the MVP, released as version 0.4 and still in beta. Version 1.0 comes later, when the maintainer declares a stable release. Later releases are in the [roadmap](roadmap.md), and the next tasks are in [m0-tasks.md](m0-tasks.md).
+M4 completes the MVP, released as version 0.4 and still in beta. Version 1.0 comes later, when the maintainer declares a stable release. Later releases are in the [roadmap](roadmap.md), and work is tracked in [GitHub issues](https://github.com/meerkat-mft/mmft/issues).
 
 Estimates are guesses. Every milestone must pass failure tests covering killed processes, dropped networks, full disks, and expired certificates.
 

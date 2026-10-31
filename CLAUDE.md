@@ -4,7 +4,7 @@ Meerkat MFT (`mmft`, domain mmft.dev) is a managed file transfer (MFT) platform.
 
 ## Current phase
 
-M0: Foundations. Work through [docs/planning/m0-tasks.md](docs/planning/m0-tasks.md), and settle the M0 items in [docs/planning/open-questions.md](docs/planning/open-questions.md) before writing product code.
+M0: Foundations. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/mmft/issues) and milestones. Finish the M0 milestone before writing product code.
 
 ## Where things live
 
@@ -14,11 +14,11 @@ M0: Foundations. Work through [docs/planning/m0-tasks.md](docs/planning/m0-tasks
 - [docs/adr/](docs/adr/): architecture decisions. One file per decision, copied from `0000-template.md` and numbered in sequence.
 - [docs/planning/prd.md](docs/planning/prd.md): product scope, the MVP, and milestones.
 - [docs/planning/roadmap.md](docs/planning/roadmap.md): stages and releases after the MVP.
-- [docs/planning/open-questions.md](docs/planning/open-questions.md): questions still to settle.
+- Tasks, bugs, and open decisions live in GitHub issues, not in repo files. Decisions, design, and rules live in repo files.
 
 ## Working rules
 
-- Record a decision as an ADR when it is expensive to reverse. When an ADR answers an open question, mark the question answered and link the ADR.
+- Record a decision as an ADR when it is expensive to reverse. When an ADR settles a `decision` issue, link the ADR and close the issue.
 - An accepted ADR is changed by writing a new ADR that supersedes it, not by editing it.
 - Never commit real credentials, private keys, or customer files, including as test fixtures.
 - Never let the orchestrator read file contents or credentials. Any change that weakens this needs a new ADR.
