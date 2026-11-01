@@ -12,7 +12,7 @@ M1: Skeleton. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/
 - [docs/naming.md](docs/naming.md): names for binaries, services, paths, config, APIs, and CLI commands.
 - [docs/conventions.md](docs/conventions.md): versioning, upgrades, work tracking, the website, git workflow, releases, support, and dependencies. Follow these rules.
 - [docs/deployment.md](docs/deployment.md): supported network topologies and handling of untrusted metadata.
-- [api/](api/): draft OpenAPI spec and agent and relay protobuf definitions. Lint them with `buf` and Redocly.
+- [api/](api/): draft OpenAPI spec and agent and relay protobuf definitions. Run `scripts/check-api.sh --write` after changing them. Generated code is in `gen/`, which must not be edited by hand.
 - [docs/adr/](docs/adr/): architecture decisions. One file per decision, copied from `0000-template.md` and numbered in sequence.
 - [docs/planning/prd.md](docs/planning/prd.md): product scope, the MVP, and milestones.
 - [docs/planning/roadmap.md](docs/planning/roadmap.md): stages and releases after the MVP.
