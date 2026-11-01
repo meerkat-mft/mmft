@@ -6,7 +6,7 @@
 
 Meerkat MFT is an open source managed file transfer orchestrator for moving files between systems. You bring the sources and destinations. Meerkat decides what moves and when, and it records what happened.
 
-> **Status:** early development. There is no working software yet, and this project is not ready for any real use.
+> **Status:** early development. Meerkat MFT doesn't work end to end yet, isn't ready for real use, and has had no external security audit. Its security properties are design goals, not proven claims.
 
 ## Design goals
 
@@ -22,6 +22,10 @@ Meerkat MFT is an open source managed file transfer orchestrator for moving file
 - [Glossary](GLOSSARY.md)
 - [Architecture decisions](docs/adr/)
 - [Conventions](docs/conventions.md)
+
+## Contributing
+
+Outside code contributions aren't accepted yet, but bug reports are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
