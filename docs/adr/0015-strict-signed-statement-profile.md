@@ -28,4 +28,4 @@ Meerkat uses a stricter profile of DSSE:
 
 ## Consequences
 
-Standard DSSE tools can read Meerkat's statements, but envelopes that use URL-safe base64 are refused. Enrollment must also prove that an agent holds its private keys, which [#15](https://github.com/meerkat-mft/mmft/issues/15) covers. Verification cost grows with the trusted set, so callers pass only the keys that could have signed, not a whole fleet.
+Standard DSSE tools can read Meerkat's statements, but envelopes that use URL-safe base64 are refused. Enrollment must also prove that an agent holds its private keys, which [#5](https://github.com/meerkat-mft/mmft/issues/5) covers. Verification cost grows with the trusted set, so callers pass only the keys that could have signed, not a whole fleet.

@@ -12,7 +12,7 @@ gh repo edit meerkat-mft/mmft --visibility public --accept-visibility-change-con
 
 Turn these on first, because `SECURITY.md` depends on the first one.
 
-Private vulnerability reporting ([#17](https://github.com/meerkat-mft/mmft/issues/17)):
+Private vulnerability reporting ([#7](https://github.com/meerkat-mft/mmft/issues/7)):
 
 ```bash
 gh api --method PUT repos/meerkat-mft/mmft/private-vulnerability-reporting
@@ -40,7 +40,7 @@ EOF
 
 ## 3. Require CI on main
 
-This covers [#16](https://github.com/meerkat-mft/mmft/issues/16). The ruleset requires a pull request and all five CI jobs, and blocks force pushes and branch deletion. It requires no approving review, because there's one maintainer. Nobody can bypass it, including administrators.
+This covers [#6](https://github.com/meerkat-mft/mmft/issues/6). The ruleset requires a pull request and all five CI jobs, and blocks force pushes and branch deletion. It requires no approving review, because there's one maintainer. Nobody can bypass it, including administrators.
 
 ```bash
 gh api --method POST repos/meerkat-mft/mmft/rulesets --input - <<'EOF'
@@ -149,7 +149,7 @@ gh api repos/meerkat-mft/mmft/rulesets --jq '.[] | {name, enforcement}'
 
 ## Trademark
 
-[#19](https://github.com/meerkat-mft/mmft/issues/19) stays open until the searches are done. Search these terms on each register: `Meerkat`, then `Meerkat MFT`.
+[#9](https://github.com/meerkat-mft/mmft/issues/9) stays open until the searches are done. Search these terms on each register: `Meerkat`, then `Meerkat MFT`.
 
 - **EU marks:** use [eSearch plus](https://euipo.europa.eu/eSearch/) at EUIPO. Search trade marks by name, and filter by Nice classes 9 and 42. Include marks in any status, not just registered ones, and try similar spellings.
 - **Benelux marks:** use the [BOIP trademarks register](https://www.boip.int/en/trademarks-register). Use advanced search with the verbal element, then limit to classes 9 and 42.
