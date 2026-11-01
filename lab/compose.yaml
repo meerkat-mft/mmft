@@ -23,6 +23,11 @@ services:
     <<: *service
     hostname: orchestrator
     networks: [site-a, site-b, core]
+    environment:
+      MMFT_DATABASE_URL: postgres://mmft:lab-only-not-a-secret@postgres:5432/mmft?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   relay:
     <<: *service
@@ -38,6 +43,11 @@ services:
     networks: [core]
     tmpfs:
       - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mmft -d mmft"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
 
   agent-a:
     <<: *agent

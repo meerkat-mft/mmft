@@ -20,6 +20,13 @@ for service in orchestrator relay agent-a agent-b; do
   expect_ok in_lab "$service" mmft version
 done
 
+label="orchestrator migrates an empty database"
+if [ "$(in_lab orchestrator mmft-orchestrator migrate)" = '{"applied":1}' ]; then pass "$label"; else fail "$label"; fi
+label="repeat migration changes nothing"
+if [ "$(in_lab orchestrator mmft-orchestrator migrate)" = '{"applied":0}' ]; then pass "$label"; else fail "$label"; fi
+label="agents hold no database URL"
+expect_fail in_lab agent-a sh -c 'env | grep -q MMFT_DATABASE_URL'
+
 label="agent-a resolves the orchestrator"
 expect_ok in_lab agent-a getent hosts orchestrator
 label="agent-a resolves the relay"

@@ -1,0 +1,71 @@
+# Data model
+
+This describes what the orchestrator stores and why, for Postgres 18. Terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions are in [ADR 0016](adr/0016-data-model-foundations.md).
+
+## Requirements
+
+- The orchestrator never stores file contents, plaintext credentials, or private keys.
+- Signed statements are stored as exact bytes, because a signature covers exact bytes.
+- Audit evidence must survive the deletion of personal data.
+- File names can be personal data, and are deletable on their own.
+- The design ceiling is 1 million deliveries a day, kept for 13 months, which is about 400 million rows. This is an upper bound, not a measurement.
+
+## Entities
+
+| Table | Purpose | Changes | Retention |
+| --- | --- | --- | --- |
+| `workspaces` | Groups agents and runs | Rarely | Life of the install |
+| `enrollment_tokens` | One-use enrollment tokens, stored as hashes | Used once | Delete soon after expiry |
+| `agents` | One row per agent | Status changes | Life of the agent |
+| `agent_identities` | Each agent's keys and identity statements over time | Revoked, never edited | Kept with audit evidence |
+| `agent_presence` | Last contact and version | Constantly | Life of the agent |
+| `signed_statements` | Every signed statement, as received | Never | Kept with audit evidence |
+| `runs` | One row per trigger firing | Until finished | 13 months by default |
+| `deliveries` | One file to one destination | Until finished | 13 months by default |
+| `delivery_files` | The file name of a delivery | Deleted by retention | Customer setting, 13 months by default |
+
+```text
+workspaces ─┬─ agents ─┬─ agent_identities
+            │          └─ agent_presence
+            ├─ enrollment_tokens
+            └─ runs ─── deliveries ─┬─ delivery_files
+                                    └─ signed_statements (manifest, receipt)
+```
+
+Every delivery belongs to a run, including a manual one. Flows arrive in M2, when `runs.flow_id` gets its foreign key.
+
+## Personal data and evidence
+
+Audit events are hash-chained, so a record can't change. They must therefore never hold a file name. They refer to the delivery ID and the sealed file hash, and the name lives only in `delivery_files`.
+
+Deleting a name removes one row and breaks nothing. What remains proves that a delivery happened, without saying what the file was called. A sealed file hash can't be matched to a known file, because every seal uses a fresh key.
+
+Delivery manifests and receipts must not contain file names either, because `signed_statements` is kept as evidence and can't be edited.
+
+## Main queries
+
+| Query | Served by |
+| --- | --- |
+| Find active deliveries | Partial index on active statuses |
+| List a run's deliveries | `deliveries (run_id)` |
+| Find an agent's deliveries | `deliveries (source_agent_id)` and `(destination_agent_id)` |
+| Page through runs in a workspace | `runs (workspace_id, id DESC)` |
+| Find the active identity of an agent | Partial unique index on `agent_identities` |
+| Claim an enrollment token | Primary key |
+| Delete expired tokens | Partial index on unused tokens by `expires_at` |
+| Delete old file names | Primary key, because UUIDv7 IDs are time-ordered |
+
+## Growth
+
+At the ceiling, `deliveries` holds about 400 million rows, plus indexes. Most installs will stay far below this.
+
+Partitioning `deliveries` by month is the planned path, once real volumes need it. It requires a change of primary key, because a partition key must be part of the primary key. That needs a planned migration of existing rows, and references to `deliveries` must change at the same time.
+
+`agent_presence` is kept apart so that heartbeats don't rewrite rows holding keys. It uses a lower fill factor, so updates can stay on the same page.
+
+## Still to design
+
+- `flows`, `flow_versions`, and the audit event tables, in M2.
+- Users, roles, and API tokens, in M3.
+- Separate database roles for migrations and the running service.
+- The retention job.

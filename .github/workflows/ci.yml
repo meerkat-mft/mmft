@@ -12,6 +12,22 @@ jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: mmft
+          POSTGRES_USER: mmft
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mmft"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+    env:
+      MMFT_TEST_DATABASE_URL: postgres://mmft:ci-only-not-a-secret@localhost:5432/mmft?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

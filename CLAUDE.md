@@ -13,6 +13,7 @@ M1: Skeleton. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/
 - [docs/conventions.md](docs/conventions.md): versioning, upgrades, work tracking, the website, git workflow, releases, support, and dependencies. Follow these rules.
 - [docs/deployment.md](docs/deployment.md): supported network topologies and handling of untrusted metadata.
 - [api/](api/): draft OpenAPI spec and agent and relay protobuf definitions. Run `scripts/check-api.sh --write` after changing them. Generated code is in `gen/`, which must not be edited by hand.
+- [docs/data-model.md](docs/data-model.md): what the orchestrator stores and why. Update it with every schema change.
 - [docs/adr/](docs/adr/): architecture decisions. One file per decision, copied from `0000-template.md` and numbered in sequence.
 - [docs/planning/prd.md](docs/planning/prd.md): product scope, the MVP, and milestones.
 - [docs/planning/roadmap.md](docs/planning/roadmap.md): stages and releases after the MVP.
@@ -30,3 +31,4 @@ M1: Skeleton. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/
 - Follow the issue workflow in the conventions, and keep the Project board up to date.
 - All interfaces are dark only. Never add or propose a light theme.
 - Public copy names no specific companies or products.
+- File names never go in audit events, delivery manifests, or receipts, only in `delivery_files`.

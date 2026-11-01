@@ -367,7 +367,7 @@ components:
   schemas:
     Id:
       type: string
-      pattern: '^[a-z0-9_-]{1,64}$'
+      format: uuid
     Name:
       type: string
       pattern: '^[A-Za-z0-9._-]{1,128}$'
@@ -492,13 +492,13 @@ components:
             $ref: '#/components/schemas/Delivery'
     Delivery:
       type: object
-      required: [id, file_name, status, evidence]
+      required: [id, status, evidence]
       properties:
         id:
           $ref: '#/components/schemas/Id'
         file_name:
           type: string
-          description: Reported by an agent. Untrusted, and may be personal data.
+          description: Reported by an agent. Untrusted, may be personal data, and is missing once retention has deleted it.
           maxLength: 1024
         size_bytes:
           type: integer

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "postgres-best-practices": {
+      "source": "neondatabase/postgres-skills",
+      "sourceType": "github",
+      "skillPath": "skills/postgres-best-practices/SKILL.md",
+      "computedHash": "f0e9670a035895d50945ca10ed4466513df2c486414c6fcebd3b4e38cc98a88c"
+    }
+  }
+}
