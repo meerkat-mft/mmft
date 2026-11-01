@@ -195,6 +195,16 @@ func NewSigner(role Role, edSeed, mlSeed []byte) (*Signer, error) {
 	return &Signer{ed: ed25519.NewKeyFromSeed(edSeed), ml: ml, role: role}, nil
 }
 
+// Seeds returns copies of the private seeds, for encrypted storage.
+func (s *Signer) Seeds() (edSeed, mlSeed []byte) {
+	return bytes.Clone(s.ed.Seed()), s.ml.Bytes()
+}
+
+// Role returns the signer's role.
+func (s *Signer) Role() Role {
+	return s.role
+}
+
 // Public returns the signer's public key.
 func (s *Signer) Public() PublicKey {
 	pub, ok := s.ed.Public().(ed25519.PublicKey)

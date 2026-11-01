@@ -10,6 +10,12 @@ linters:
     - nilerr
     - revive
     - unconvert
+  exclusions:
+    rules:
+      # Tests read and write their own temporary files.
+      - path: _test\.go
+        linters: [gosec]
+        text: "G302|G304|G703"
 
 formatters:
   enable:
