@@ -118,18 +118,6 @@ Delete branches after merging, and allow squash merges only:
 gh repo edit meerkat-mft/mmft --delete-branch-on-merge --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false
 ```
 
-Delete the old merged branches, which would otherwise be visible:
-
-```bash
-git -C . fetch --prune origin
-```
-
-```bash
-gh api 'repos/meerkat-mft/mmft/branches?per_page=100' --paginate --jq '.[].name | select(. != "main")'
-```
-
-Check that list, then delete each one with `git push origin --delete <branch>`. Their commits stay reachable through pull requests.
-
 ## 7. Website
 
 Merge the prepared pull request on `meerkat-mft/meerkat-mft.github.io`. It changes "Will be open source" and links the source code and security policy cards.
