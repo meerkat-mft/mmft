@@ -74,4 +74,4 @@ Fingerprints travel through the customer's deployment channel, never through the
 
 The orchestrator has no key that can create an agent identity or approve a flow. Enrollment and renewal can be fully automated, but the customer must protect the automation key in their pipeline, and an administrator must reissue it every 90 days. Losing the root is painful by design, because no one else can restore it. Customers must look after the offline file, so setup should make this hard to skip, and the documentation needs a tested recovery runbook.
 
-Identities use Meerkat's own signed statements rather than X.509. They use standard primitives, but the protocol around them is ours, so it needs external review before any regulated customer relies on it. The statement format is settled in [#8](https://github.com/meerkat-mft/mmft/issues/8).
+Identities use Meerkat's own signed statements rather than X.509. They use standard primitives, but the protocol around them is ours, so it needs external review before any regulated customer relies on it. The statement format is settled in [ADR 0012](0012-signed-statements-and-flow-approval.md).
