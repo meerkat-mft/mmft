@@ -198,6 +198,7 @@ func TestVerifyAdministratorRejectsBadClaims(t *testing.T) {
 		"trailing object":   append(bytes.Clone(base), []byte(" {}")...),
 		"repeated owner":    append(bytes.TrimSuffix(bytes.Clone(base), []byte("}")), []byte(`,"owner":"mallory"}`)...),
 		"cased owner field": append(bytes.TrimSuffix(bytes.Clone(base), []byte("}")), []byte(`,"OWNER":"mallory"}`)...),
+		"aliased version":   append(bytes.TrimSuffix(bytes.Replace(base, []byte(`"version":1`), []byte(`"version":2`), 1), []byte("}")), []byte(`,"verſion":1}`)...),
 		"payload not JSON":  []byte("not an object"),
 	}
 	if _, _, err := VerifyAdministrator(signClaim(t, l, base), l.rootPub, l.rootPub.Fingerprint(), now); err != nil {
@@ -673,6 +674,7 @@ func TestReadPublicRejects(t *testing.T) {
 		"trailing bracket": `{"version":1}]`,
 		"repeated field":   `{"version":1,"owner":"a","owner":"b"}`,
 		"cased field":      `{"version":1,"OWNER":"a"}`,
+		"aliased field":    `{"version":2,"verſion":1}`,
 		"not an object":    `[]`,
 	} {
 		path := filepath.Join(dir, "pub")
