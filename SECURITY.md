@@ -1,10 +1,10 @@
 # Security policy
 
-Meerkat MFT is in early development and has no releases yet. It has had no external security audit. Do not use it for real data.
+Meerkat MFT is in early development, and its only releases so far are release candidates. It has had no external security audit. Do not use it for real data.
 
 ## Supported versions
 
-There are no releases to support yet, so fixes go to the `main` branch. During 0.x, security issues will be fixed in the latest release only.
+Release candidates are not supported, so fixes go to the `main` branch and the next release. During 0.x, security issues will be fixed in the latest release only.
 
 ## Verifying a release
 
@@ -20,6 +20,8 @@ cosign verify-blob \
   checksums.txt &&
 sha256sum --check --ignore-missing checksums.txt
 ```
+
+On macOS, use `shasum -a 256` in place of `sha256sum`.
 
 To check a container image:
 
