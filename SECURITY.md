@@ -10,14 +10,14 @@ There are no releases to support yet, so fixes go to the `main` branch. During 0
 
 Releases are built by the [release workflow](.github/workflows/release.yml) and signed keylessly with [Sigstore Cosign](https://docs.sigstore.dev/). No long-lived signing key exists. Each signature is tied to the workflow run that made it and is recorded in the public Rekor transparency log.
 
-To check downloaded archives or SBOMs, verify the signed checksum file, then check your files against it:
+To check downloaded archives or SBOMs, verify the signed checksum file, then check your files against it. The checksum check runs only if the signature is valid:
 
 ```bash
 cosign verify-blob \
   --bundle checksums.txt.sigstore.json \
   --certificate-identity-regexp '^https://github\.com/meerkat-mft/mmft/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  checksums.txt
+  checksums.txt &&
 sha256sum --check --ignore-missing checksums.txt
 ```
 
