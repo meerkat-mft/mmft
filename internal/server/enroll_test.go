@@ -63,19 +63,25 @@ func (h harness) token(t *testing.T, workspace, name string) string {
 // newAgent builds a complete, valid enrollment request for a token.
 func newAgent(t *testing.T, token, name string) *agentv1.EnrollRequest {
 	t.Helper()
-	signer, err := statement.GenerateSigner(statement.RoleAgent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enc, err := age.GenerateHybridIdentity()
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, connKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, connKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newAgentWithCSR(t, token, name, csr)
+}
+
+// newAgentWithCSR builds a request with a valid proof over any CSR bytes.
+func newAgentWithCSR(t *testing.T, token, name string, csr []byte) *agentv1.EnrollRequest {
+	t.Helper()
+	signer, err := statement.GenerateSigner(statement.RoleAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := age.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +257,31 @@ func TestBadRequestsDoNotUseUpTheToken(t *testing.T) {
 		if _, err := h.enroll(t, req); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+	if _, err := h.enroll(t, newAgent(t, token, "agent-a")); err != nil {
+		t.Fatalf("token was used up: %v", err)
+	}
+}
+
+// A request that passes the proof check but fails inside the transaction must
+// leave nothing behind and keep the token usable.
+func TestFailureInsideTheTransactionRollsBack(t *testing.T) {
+	h := start(t)
+	token := h.token(t, "lab", "agent-a")
+	if _, err := h.enroll(t, newAgentWithCSR(t, token, "agent-a", []byte("not a certificate request"))); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("malformed CSR: %v", err)
+	}
+
+	ctx := context.Background()
+	sum := sha256.Sum256([]byte(token))
+	var agents, identities int
+	var used bool
+	if err := h.db.QueryRow(ctx, `SELECT (SELECT count(*) FROM agents), (SELECT count(*) FROM agent_identities),
+		(SELECT used_at IS NOT NULL FROM enrollment_tokens WHERE token_sha256 = $1)`, sum[:]).Scan(&agents, &identities, &used); err != nil {
+		t.Fatal(err)
+	}
+	if agents != 0 || identities != 0 || used {
+		t.Fatalf("left %d agents, %d identities, token used %v", agents, identities, used)
 	}
 	if _, err := h.enroll(t, newAgent(t, token, "agent-a")); err != nil {
 		t.Fatalf("token was used up: %v", err)
