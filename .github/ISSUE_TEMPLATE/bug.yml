@@ -1,0 +1,32 @@
+name: Bug report
+description: Something doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Don't report security problems here. Follow SECURITY.md instead.
+  - type: textarea
+    id: did
+    attributes:
+      label: What you did
+      description: Steps to reproduce. Leave out file contents, credentials, and real file names.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: Include error messages and logs, with secrets removed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.1.0, or a commit hash

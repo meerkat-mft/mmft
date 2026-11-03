@@ -1,0 +1,33 @@
+name: Task
+description: A piece of planned work, normally part of a milestone.
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: What to build or change, and why.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Checkable acceptance criteria. The pull request is reviewed against these.
+      placeholder: |
+        - A command moves a file between lab agents.
+        - The bytes at the relay contain no plaintext.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this issue doesn't cover, and where it goes instead.
+  - type: textarea
+    id: refs
+    attributes:
+      label: Depends on and references
+      description: Issues this depends on, and ADRs, interfaces, or docs it touches.
+      placeholder: |
+        Depends on #16.
+        ADR 0010, api/agent.proto
