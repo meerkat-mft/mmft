@@ -244,6 +244,25 @@ func TestVerifyAgentRejects(t *testing.T) {
 		t.Errorf("expired: err = %v", err)
 	}
 
+	// The identity's own window is checked while the certificate is still valid.
+	cert := certificate(t, l, valid)
+	later, err := CertifyAgent(adminSigner(t, l), cert, l.rootPub, l.rootPub.Fingerprint(), request(a), now.Add(time.Hour), valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	laterBytes, _ := json.Marshal(later)
+	if _, _, err := VerifyAgent(laterBytes, l.rootPub.Fingerprint(), now.Add(10*time.Minute)); !errors.Is(err, ErrNotYetValid) {
+		t.Errorf("identity not yet valid: err = %v", err)
+	}
+	short, err := CertifyAgent(adminSigner(t, l), cert, l.rootPub, l.rootPub.Fingerprint(), request(a), now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortBytes, _ := json.Marshal(short)
+	if _, _, err := VerifyAgent(shortBytes, l.rootPub.Fingerprint(), now.Add(2*time.Hour)); !errors.Is(err, ErrExpired) {
+		t.Errorf("identity expired: err = %v", err)
+	}
+
 	// A chain swapped for another root's, which matches a different pin, must not
 	// verify the original signature.
 	var e statement.Envelope
