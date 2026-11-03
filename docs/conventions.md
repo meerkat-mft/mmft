@@ -76,12 +76,15 @@ Work that doesn't change the repo, such as DNS or account setup, is closed on th
 - Commits follow Conventional Commits, such as `feat(agent): add file watcher`. Commits made before this rule stay as they are. Scopes are listed in [naming.md](naming.md#commit-scopes).
 - Pull request titles follow Conventional Commits too, because the squash merge uses the title as the commit on `main`. CI checks the title.
 - `main` is protected by the `Protect main` ruleset: pull requests only, all CI jobs passing, linear history, every conversation resolved, and an automatic Copilot review. Nobody can bypass it.
+- `v*` tags are protected by the `Protect release tags` ruleset: once pushed, a release tag can't be moved or deleted. A bad release gets a new version, not a retag. Nobody can bypass it.
 - Copilot review follows `.github/copilot-instructions.md`. Update it when a rule in `CLAUDE.md` changes.
 
 ## Releases
 
 - A pushed tag triggers CI to build binaries and container images, generate the SBOM, sign everything, and publish a GitHub release.
-- Release automation uses GoReleaser, with signing through Sigstore Cosign.
+- Release automation uses GoReleaser, with signing through Sigstore Cosign. The configuration is in `.goreleaser.yaml` and `.github/workflows/release.yml`.
+- Signing is keyless, tied to the release workflow's GitHub identity, so there is no signing key to store or rotate. [SECURITY.md](../SECURITY.md#verifying-a-release) shows how to verify a release.
+- Images are published to `ghcr.io/meerkat-mft/<component>`. Release candidates don't move the `latest` tag.
 - `CHANGELOG.md` follows the Keep a Changelog format. A pull request with a change users would notice adds a line under `[Unreleased]`. Releasing moves those lines under the new version.
 - Security fixes get their own advisory.
 

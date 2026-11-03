@@ -1,0 +1,120 @@
+# Release build for Meerkat MFT. A pushed v* tag runs this through
+# .github/workflows/release.yml. Everything is signed keylessly with Cosign,
+# using the workflow's GitHub OIDC identity, so no signing key exists.
+version: 2
+
+project_name: mmft
+
+builds:
+  - id: mmft
+    main: ./cmd/mmft
+    binary: mmft
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X mmft.dev/mmft/internal/version.Version={{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - id: mmft-agent
+    main: ./cmd/mmft-agent
+    binary: mmft-agent
+    goos: [linux, windows]
+    goarch: [amd64, arm64]
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X mmft.dev/mmft/internal/version.Version={{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - id: mmft-orchestrator
+    main: ./cmd/mmft-orchestrator
+    binary: mmft-orchestrator
+    goos: [linux]
+    goarch: [amd64, arm64]
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X mmft.dev/mmft/internal/version.Version={{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - id: mmft-relay
+    main: ./cmd/mmft-relay
+    binary: mmft-relay
+    goos: [linux]
+    goarch: [amd64, arm64]
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X mmft.dev/mmft/internal/version.Version={{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# One archive per component, so a system that runs only an agent never
+# downloads orchestrator code.
+archives:
+  - id: mmft
+    ids: [mmft]
+    name_template: "mmft_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: mmft-agent
+    ids: [mmft-agent]
+    name_template: "mmft-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: mmft-orchestrator
+    ids: [mmft-orchestrator]
+    name_template: "mmft-orchestrator_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+  - id: mmft-relay
+    ids: [mmft-relay]
+    name_template: "mmft-relay_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+
+# An SPDX SBOM for each archive, made with Syft.
+sboms:
+  - artifacts: archive
+    documents: ["{{ .ArtifactName }}.spdx.json"]
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
+checksum:
+  name_template: checksums.txt
+
+# Signing the checksums covers every archive and SBOM listed in them.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--bundle=${signature}", "${artifact}", "--yes"]
+
+# Images get an SBOM attestation from BuildKit by default.
+dockers_v2:
+  - id: mmft-orchestrator
+    ids: [mmft-orchestrator]
+    dockerfile: build/mmft-orchestrator.Dockerfile
+    images: [ghcr.io/meerkat-mft/mmft-orchestrator]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    annotations: &annotations
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+  - id: mmft-relay
+    ids: [mmft-relay]
+    dockerfile: build/mmft-relay.Dockerfile
+    images: [ghcr.io/meerkat-mft/mmft-relay]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    annotations: *annotations
+  - id: mmft-agent
+    ids: [mmft-agent]
+    dockerfile: build/mmft-agent.Dockerfile
+    images: [ghcr.io/meerkat-mft/mmft-agent]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    annotations: *annotations
+
+docker_signs:
+  - cmd: cosign
+    args: ["sign", "${artifact}@${digest}", "--yes"]
+
+release:
+  prerelease: auto
+
+changelog:
+  use: github-native
