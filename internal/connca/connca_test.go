@@ -195,6 +195,24 @@ func TestServerCertificateIsNotAClientCertificate(t *testing.T) {
 	}
 }
 
+func TestServerChainCarriesTheCA(t *testing.T) {
+	a := authority(t)
+	c, err := a.ServerCertificate([]string{"orchestrator"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Certificate) != 2 {
+		t.Fatalf("chain has %d certificates", len(c.Certificate))
+	}
+	ca, err := x509.ParseCertificate(c.Certificate[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Fingerprint(ca) != a.Fingerprint() {
+		t.Fatal("second certificate is not the CA")
+	}
+}
+
 func TestAgentIDRejects(t *testing.T) {
 	for name, raw := range map[string]string{
 		"other scheme": "https://example.com/" + agentID,

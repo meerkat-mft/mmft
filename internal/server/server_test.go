@@ -13,9 +13,11 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -23,6 +25,7 @@ import (
 
 	agentv1 "mmft.dev/mmft/gen/agent/v1"
 	"mmft.dev/mmft/internal/connca"
+	"mmft.dev/mmft/internal/db/dbtest"
 )
 
 const (
@@ -30,8 +33,27 @@ const (
 	agentID    = "019a3f2e-7c11-7d3e-9f7b-2c1d4e5f6a7b"
 )
 
+type clock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *clock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *clock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
 type harness struct {
+	clock    *clock
 	ca       *connca.Authority
+	db       *pgxpool.Pool
 	grpcAddr string
 	apiAddr  string
 	pool     *x509.CertPool
@@ -44,7 +66,9 @@ func start(t *testing.T) harness {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(adminToken))
-	s, err := New(Config{Authority: ca, Names: []string{"orchestrator.test"}, AdminTokenSHA256: hex.EncodeToString(sum[:])})
+	pool := dbtest.Pool(t)
+	c := &clock{t: time.Now()}
+	s, err := New(Config{Authority: ca, DB: pool, Names: []string{"orchestrator.test"}, AdminTokenSHA256: hex.EncodeToString(sum[:]), Now: c.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +89,7 @@ func start(t *testing.T) harness {
 			t.Errorf("serve: %v", err)
 		}
 	})
-	return harness{ca: ca, grpcAddr: g.Addr().String(), apiAddr: a.Addr().String(), pool: ca.Pool()}
+	return harness{clock: c, ca: ca, db: pool, grpcAddr: g.Addr().String(), apiAddr: a.Addr().String(), pool: ca.Pool()}
 }
 
 func clientCert(t *testing.T, ca *connca.Authority, id string) tls.Certificate {
@@ -112,7 +136,7 @@ func TestEnrollmentNeedsNoCertificate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := agentv1.NewEnrollmentServiceClient(h.dial(t)).Enroll(ctx, &agentv1.EnrollRequest{})
-	if status.Code(err) != codes.Unimplemented {
+	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -211,12 +235,14 @@ func TestNewValidatesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	good := strings.Repeat("a", 64)
+	pool := dbtest.Pool(t)
 	for name, cfg := range map[string]Config{
-		"no CA":      {Names: []string{"x"}, AdminTokenSHA256: good},
-		"no names":   {Authority: ca, AdminTokenSHA256: good},
-		"no hash":    {Authority: ca, Names: []string{"x"}},
-		"short hash": {Authority: ca, Names: []string{"x"}, AdminTokenSHA256: "abcd"},
-		"not hex":    {Authority: ca, Names: []string{"x"}, AdminTokenSHA256: strings.Repeat("z", 64)},
+		"no CA":       {DB: pool, Names: []string{"x"}, AdminTokenSHA256: good},
+		"no database": {Authority: ca, Names: []string{"x"}, AdminTokenSHA256: good},
+		"no names":    {Authority: ca, DB: pool, AdminTokenSHA256: good},
+		"no hash":     {Authority: ca, DB: pool, Names: []string{"x"}},
+		"short hash":  {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: "abcd"},
+		"not hex":     {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: strings.Repeat("z", 64)},
 	} {
 		if _, err := New(cfg); err == nil {
 			t.Errorf("%s accepted", name)
@@ -230,7 +256,7 @@ func TestServerCertificateIsReplaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	s, err := New(Config{Authority: ca, Names: []string{"x"}, AdminTokenSHA256: strings.Repeat("a", 64), Now: func() time.Time { return now }})
+	s, err := New(Config{Authority: ca, DB: dbtest.Pool(t), Names: []string{"x"}, AdminTokenSHA256: strings.Repeat("a", 64), Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -242,6 +242,7 @@ func TestRoleTable(t *testing.T) {
 		TypeDeliveryReceipt:     {RoleAgent},
 		TypeAuditBatch:          {RoleAgent},
 		TypeAuditCheckpoint:     {RoleCheckpoint},
+		TypeEnrollmentRequest:   {RoleAgent},
 	}
 	if len(allowedRoles) != len(table) {
 		t.Fatalf("allowedRoles has %d types, want %d", len(allowedRoles), len(table))

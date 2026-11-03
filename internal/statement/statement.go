@@ -67,6 +67,7 @@ const (
 	TypeDeliveryReceipt     Type = "application/vnd.mmft.delivery-receipt+json;v=1"
 	TypeAuditBatch          Type = "application/vnd.mmft.audit-batch+json;v=1"
 	TypeAuditCheckpoint     Type = "application/vnd.mmft.audit-checkpoint+json;v=1"
+	TypeEnrollmentRequest   Type = "application/vnd.mmft.enrollment-request+json;v=1"
 )
 
 // Role is what a key is trusted to do.
@@ -81,7 +82,8 @@ const (
 	RoleCheckpoint
 )
 
-// allowedRoles is the signer table from ADR 0012.
+// allowedRoles is the signer table from ADR 0012, plus the enrollment request
+// from ADR 0018.
 var allowedRoles = map[Type][]Role{
 	TypeRootRollover:        {RoleRoot},
 	TypeAdministratorKey:    {RoleRoot},
@@ -96,6 +98,7 @@ var allowedRoles = map[Type][]Role{
 	TypeDeliveryReceipt:     {RoleAgent},
 	TypeAuditBatch:          {RoleAgent},
 	TypeAuditCheckpoint:     {RoleCheckpoint},
+	TypeEnrollmentRequest:   {RoleAgent},
 }
 
 func roleAllowed(t Type, r Role) (bool, error) {
