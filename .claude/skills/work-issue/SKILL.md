@@ -1,6 +1,6 @@
 ---
 name: work-issue
-description: Work a Meerkat MFT GitHub issue from start to merge, following the issue workflow in docs/conventions.md. Use when asked to pick up, work on, implement, or fix an issue, such as "work on #19" or "take the next M1 issue".
+description: 'Work a Meerkat MFT GitHub issue from start to merge, following the issue workflow in docs/conventions.md. Use when asked to pick up, work on, implement, or fix an issue, such as "work on #19" or "take the next M1 issue".'
 ---
 
 # Work an issue
