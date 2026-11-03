@@ -1,0 +1,21 @@
+name: Decision
+description: An open question that needs a decision, often settled by an ADR.
+labels: [decision]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: The decision to make, and why it is needed now.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      description: The serious options known so far, with their trade-offs.
+  - type: textarea
+    id: blocks
+    attributes:
+      label: Blocks
+      description: Issues or milestones that wait on this decision.

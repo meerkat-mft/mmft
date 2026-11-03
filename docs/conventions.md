@@ -37,13 +37,23 @@ During 0.x, the REST API can break while staying on `/api/v1/`, if the release n
 - Decisions, design, and rules stay in repo files, so they are versioned and reviewed.
 - All open issues are on the [Meerkat MFT Project](https://github.com/orgs/meerkat-mft/projects/1), with the status Todo, In Progress, or Done. Add new issues to it when you create them.
 
+### Writing an issue
+
+- Use the issue forms: Task, Bug report, or Decision.
+- A task's "Done when" criteria are its spec. The pull request is reviewed against them.
+- Label an issue `needs-plan` when it is large or risky. Its plan is posted as an issue comment and approved before any code is written.
+
 ### Working on an issue
 
 1. Pick an issue from Todo, normally from the current milestone, and set it to In Progress.
-2. Create a short-lived branch from `main`.
-3. Open a pull request with `Closes #n` in its description.
-4. Merge after CI passes, using a squash merge, and delete the branch.
-5. Confirm that the issue is closed and shows as Done.
+2. If the issue is labelled `needs-plan`, post a plan as a comment and wait for approval.
+3. Create a short-lived branch from `main`.
+4. Open a pull request from the template, with `Closes #n` in its description and a Conventional Commits title.
+5. Copilot reviews every pull request automatically. Fix each valid comment, or reply with the reason it doesn't apply, then resolve the thread.
+6. Merge after CI passes and every conversation is resolved, using a squash merge. The branch is deleted automatically.
+7. Confirm that the issue is closed and shows as Done.
+
+Claude Code sessions follow these steps through the `work-issue` skill in `.claude/skills/`.
 
 Work that doesn't change the repo, such as DNS or account setup, is closed on the issue once it's verified.
 
@@ -64,6 +74,9 @@ Work that doesn't change the repo, such as DNS or account setup, is closed on th
 - Work happens on short-lived branches and merges through a pull request after CI passes, even when working alone.
 - Create a `release/0.5` style branch only when a release needs a fix that `main` cannot take.
 - Commits follow Conventional Commits, such as `feat(agent): add file watcher`. Commits made before this rule stay as they are.
+- Pull request titles follow Conventional Commits too, because the squash merge uses the title as the commit on `main`. CI checks the title.
+- `main` is protected by the `Protect main` ruleset: pull requests only, all CI jobs passing, linear history, every conversation resolved, and an automatic Copilot review. Nobody can bypass it.
+- Copilot review follows `.github/copilot-instructions.md`. Update it when a rule in `CLAUDE.md` changes.
 
 ## Releases
 
