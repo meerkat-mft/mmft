@@ -34,6 +34,9 @@ message EnrollRequest {
   string encryption_recipient = 5;
   // PKCS#10 request for the connection certificate.
   bytes certificate_request = 6;
+  // Enrollment request statement signed with both agent keys, which proves the
+  // agent holds them. See ADR 0018.
+  bytes proof_statement = 7;
 }
 
 message EnrollResponse {

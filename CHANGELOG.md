@@ -6,4 +6,5 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- The orchestrator issues one-use enrollment tokens and enrolls agents that prove they hold their keys.
 - Signed releases: each tag publishes binaries, container images, and SBOMs, signed with Sigstore Cosign. See SECURITY.md for how to verify them.

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -36,6 +37,7 @@ const (
 // Config configures a server.
 type Config struct {
 	Authority *connca.Authority
+	DB        *pgxpool.Pool
 	// Names are the DNS names on the server certificate.
 	Names []string
 	// AdminTokenSHA256 is the hex hash of the bootstrap token from ADR 0017.
@@ -54,8 +56,8 @@ type Server struct {
 
 // New validates a configuration and builds a server.
 func New(cfg Config) (*Server, error) {
-	if cfg.Authority == nil || len(cfg.Names) == 0 {
-		return nil, errors.New("server: a CA and server names are required")
+	if cfg.Authority == nil || cfg.DB == nil || len(cfg.Names) == 0 {
+		return nil, errors.New("server: a CA, a database, and server names are required")
 	}
 	token, err := hex.DecodeString(cfg.AdminTokenSHA256)
 	if err != nil || len(token) != sha256.Size {
@@ -71,7 +73,7 @@ func New(cfg Config) (*Server, error) {
 		grpc.UnaryInterceptor(unaryAuth),
 		grpc.StreamInterceptor(streamAuth),
 	)
-	agentv1.RegisterEnrollmentServiceServer(s.grpc, agentv1.UnimplementedEnrollmentServiceServer{})
+	agentv1.RegisterEnrollmentServiceServer(s.grpc, enrollment{s: s})
 	agentv1.RegisterAgentServiceServer(s.grpc, agentv1.UnimplementedAgentServiceServer{})
 	return s, nil
 }
@@ -149,6 +151,7 @@ func (s *Server) API() http.Handler {
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
 	})
+	mux.Handle("POST /api/v1/agents/enrollment-tokens", s.requireAdmin(http.HandlerFunc(s.createToken)))
 	mux.Handle("/api/v1/", s.requireAdmin(http.NotFoundHandler()))
 	return mux
 }

@@ -168,6 +168,14 @@ _Avoid_: Agent certificate, mTLS key
 The process that admits a new agent to the Meerkat stack.
 _Avoid_: Registration, onboarding, pairing
 
+**Enrollment token**:
+A one-use secret, valid for one hour, that lets one named agent start enrollment.
+_Avoid_: Join token, invite code
+
+**Agent fingerprint**:
+A digest of an agent's signing keys and encryption recipient, compared with the host before its identity is signed.
+_Avoid_: Key ID, thumbprint
+
 **Agent allowlist**:
 The locally held list of paths and destinations an agent may use, which the orchestrator cannot change.
 _Avoid_: Agent policy, permissions
