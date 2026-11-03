@@ -100,8 +100,20 @@ func serve() error {
 	if err != nil {
 		return err
 	}
+	url := os.Getenv("MMFT_DATABASE_URL")
+	if url == "" {
+		return errors.New("MMFT_DATABASE_URL is not set")
+	}
+	open, cancel := context.WithTimeout(context.Background(), migrateTimeout)
+	defer cancel()
+	pool, err := db.Open(open, url)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
 	srv, err := server.New(server.Config{
 		Authority:        ca,
+		DB:               pool,
 		Names:            strings.Split(os.Getenv("MMFT_SERVER_NAMES"), ","),
 		AdminTokenSHA256: os.Getenv("MMFT_ADMIN_TOKEN_SHA256"),
 	})

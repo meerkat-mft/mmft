@@ -78,6 +78,7 @@ paths:
     post:
       operationId: createEnrollmentToken
       summary: Create a one-use enrollment token
+      description: The token enrolls one agent with this name, and expires after one hour. The workspace is created if it doesn't exist yet.
       tags: [Agents]
       requestBody:
         required: true
@@ -108,6 +109,8 @@ paths:
         '400':
           $ref: '#/components/responses/Problem'
         '401':
+          $ref: '#/components/responses/Problem'
+        '409':
           $ref: '#/components/responses/Problem'
   /agents/{agent_id}:
     parameters:

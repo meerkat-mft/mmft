@@ -174,7 +174,8 @@ func (a *Authority) Pool() *x509.CertPool {
 	return pool
 }
 
-// ServerCertificate issues a short-lived server certificate for names.
+// ServerCertificate issues a short-lived server certificate for names, with the
+// CA certificate as its chain.
 func (a *Authority) ServerCertificate(names []string, now time.Time) (*tls.Certificate, error) {
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -197,7 +198,9 @@ func (a *Authority) ServerCertificate(names []string, now time.Time) (*tls.Certi
 	if err != nil {
 		return nil, err
 	}
-	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
+	// The CA certificate follows, so a client holding only its fingerprint can
+	// verify the server. See ADR 0018.
+	return &tls.Certificate{Certificate: [][]byte{der, a.cert.Raw}, PrivateKey: key, Leaf: leaf}, nil
 }
 
 // SignAgent issues a connection certificate for a verified agent. It takes only
