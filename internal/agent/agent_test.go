@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -102,7 +103,14 @@ func TestWrongCAPinFailsAndKeepsTheToken(t *testing.T) {
 	token := o.Token(t, "lab", "agent-a")
 	in := install(o, token, "agent-a")
 	in.CAFingerprint = other.CA.Fingerprint()
-	if _, err := enroll(t, dir, in); err == nil || !strings.Contains(err.Error(), "pinned CA") {
+	// Dial only the bound IPv4 address so an IPv6 connection refusal cannot
+	// mask the CA-pin error. The wrong CA is rejected before name verification.
+	_, port, err := net.SplitHostPort(in.Orchestrator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Orchestrator = net.JoinHostPort("127.0.0.1", port)
+	if _, err := enroll(t, dir, in); err == nil || !strings.Contains(err.Error(), "pinned CA") || strings.Contains(err.Error(), "x509:") {
 		t.Fatalf("other CA pin: %v", err)
 	}
 	keys, err := LoadKeys(dir)
