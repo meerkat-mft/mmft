@@ -81,7 +81,9 @@ Work that doesn't change the repo, such as DNS or account setup, is closed on th
 ## Releases
 
 - A pushed tag triggers CI to build binaries and container images, generate the SBOM, sign everything, and publish a GitHub release.
-- Release automation uses GoReleaser, with signing through Sigstore Cosign.
+- Release automation uses GoReleaser, with signing through Sigstore Cosign. The configuration is in `.goreleaser.yaml` and `.github/workflows/release.yml`.
+- Signing is keyless, tied to the release workflow's GitHub identity, so there is no signing key to store or rotate. [SECURITY.md](../SECURITY.md#verifying-a-release) shows how to verify a release.
+- Images are published to `ghcr.io/meerkat-mft/<component>`. Release candidates don't move the `latest` tag.
 - `CHANGELOG.md` follows the Keep a Changelog format. A pull request with a change users would notice adds a line under `[Unreleased]`. Releasing moves those lines under the new version.
 - Security fixes get their own advisory.
 
