@@ -251,3 +251,49 @@ func AgentID(cert *x509.Certificate) (string, error) {
 	}
 	return id, nil
 }
+
+// ErrWrongServer is returned when the server's chain doesn't lead to the pinned CA.
+var ErrWrongServer = errors.New("connca: server is not signed by the pinned CA")
+
+// PinnedClient returns a TLS client configuration that trusts a server only if
+// it sends the CA with this fingerprint after a certificate that the CA issued
+// for serverName. The install command carries the fingerprint, so no CA file
+// is needed. See ADR 0018.
+func PinnedClient(caFingerprint, serverName string, now func() time.Time) *tls.Config {
+	return &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		ServerName: serverName,
+		// The default verification needs the CA in advance. VerifyConnection does
+		// the full check against the pinned CA instead.
+		InsecureSkipVerify: true, //nolint:gosec // verified in VerifyConnection
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			return verifyPinned(cs.PeerCertificates, caFingerprint, serverName, now())
+		},
+	}
+}
+
+func verifyPinned(chain []*x509.Certificate, caFingerprint, serverName string, now time.Time) error {
+	if len(chain) < 2 || caFingerprint == "" {
+		return ErrWrongServer
+	}
+	var ca *x509.Certificate
+	for _, c := range chain[1:] {
+		if Fingerprint(c) == caFingerprint && c.IsCA {
+			ca = c
+		}
+	}
+	if ca == nil {
+		return ErrWrongServer
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := chain[0].Verify(x509.VerifyOptions{
+		Roots:       roots,
+		DNSName:     serverName,
+		CurrentTime: now,
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}); err != nil {
+		return fmt.Errorf("%w: %w", ErrWrongServer, err)
+	}
+	return nil
+}
