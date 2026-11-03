@@ -211,7 +211,9 @@ func CertifyAgent(admin *statement.Signer, certificate []byte, root statement.Pu
 	if adminV.Key.Fingerprint() != admin.Public().Fingerprint() {
 		return nil, ErrWrongCertificate
 	}
-	if lifetime <= 0 || lifetime > MaxAgentLifetime {
+	// The validity starts clockSkew in the past, so a shorter lifetime would
+	// already be over when it is signed.
+	if lifetime <= clockSkew || lifetime > MaxAgentLifetime {
 		return nil, ErrBadLifetime
 	}
 	if !idPattern.MatchString(req.AgentID) || !ValidName(req.Workspace) || !ValidName(req.AgentName) {

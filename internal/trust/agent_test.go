@@ -207,10 +207,18 @@ func TestCertifyAgentChecksItsOwnChain(t *testing.T) {
 	if _, err := CertifyAgent(adminSigner(t, other), cert, l.rootPub, l.rootPub.Fingerprint(), request(a), now, valid); !errors.Is(err, ErrWrongCertificate) {
 		t.Errorf("other administrator: err = %v", err)
 	}
-	for _, d := range []time.Duration{0, MaxAgentLifetime + time.Hour} {
+	for _, d := range []time.Duration{0, clockSkew, MaxAgentLifetime + time.Hour} {
 		if _, err := CertifyAgent(adminSigner(t, l), cert, l.rootPub, l.rootPub.Fingerprint(), request(a), now, d); !errors.Is(err, ErrBadLifetime) {
 			t.Errorf("lifetime %v: err = %v", d, err)
 		}
+	}
+	shortest, err := CertifyAgent(adminSigner(t, l), cert, l.rootPub, l.rootPub.Fingerprint(), request(a), now, clockSkew+time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortestBytes, _ := json.Marshal(shortest)
+	if _, _, err := VerifyAgent(shortestBytes, l.rootPub.Fingerprint(), now); err != nil {
+		t.Errorf("shortest lifetime does not verify when signed: %v", err)
 	}
 	shared := request(a)
 	adminEd, _ := adminSigner(t, l).Public().Bytes()
