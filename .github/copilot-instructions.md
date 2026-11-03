@@ -19,7 +19,7 @@ Flag any change that breaks one of these as a blocking issue.
 
 - A schema change also updates `docs/data-model.md`.
 - A change under `api/` also regenerates `gen/` with `scripts/check-api.sh --write`. Nothing in `gen/` is edited by hand.
-- A change that is expensive to reverse needs an ADR in `docs/adr/`. An accepted ADR is never edited; a new ADR supersedes it.
+- A change that is expensive to reverse needs an ADR in `docs/adr/`. An accepted ADR is never edited; a new ADR supersedes it. The one allowed edit is setting the old ADR's status to `Superseded by NNNN`, in the same pull request as the new ADR.
 - Terms follow `GLOSSARY.md` exactly, in code, comments, and docs.
 - GitHub Actions are pinned to full commit hashes.
 - New dependencies are added sparingly, especially in the agent. Any dependency that touches cryptography needs a close look.
