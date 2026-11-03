@@ -56,6 +56,10 @@ var (
 // replace it to simulate a full disk.
 var freeSpace = freeBytes
 
+// afterHashCheck runs between the first hash check and decryption. Tests replace
+// it to change the sealed file in between.
+var afterHashCheck = func() {}
+
 // Sealed describes a sealed file in an agent's spool.
 type Sealed struct {
 	Path   string
@@ -271,6 +275,7 @@ func open(sealedPath string, m Manifest, identity age.Identity, destDir string) 
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
+	afterHashCheck()
 
 	out, err := os.CreateTemp(destDir, ".mmft-*.partial")
 	if err != nil {

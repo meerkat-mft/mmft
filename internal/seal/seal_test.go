@@ -268,6 +268,64 @@ func TestChangeDuringOpenIsRefused(t *testing.T) {
 	assertEmpty(t, dest)
 }
 
+// Replacing the sealed file with another valid one after the first hash check
+// must be caught by the second check, and the plaintext removed.
+func TestSwapDuringOpenIsRefused(t *testing.T) {
+	f := newFixture(t)
+	data := randomBytes(t, 3*chunkSize)
+	s, m := f.sealAndSign(t, data, delivery(deliveryA))
+	o, _ := f.sealAndSign(t, data, delivery(deliveryB))
+	other, err := os.ReadFile(o.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { afterHashCheck = func() {} })
+	afterHashCheck = func() { write(t, s.Path, other) }
+
+	dest := t.TempDir()
+	if _, err := Open(s.Path, m, f.identity, dest); !errors.Is(err, ErrHashMismatch) {
+		t.Fatalf("got %v, want ErrHashMismatch", err)
+	}
+	assertEmpty(t, dest)
+}
+
+// A source file that grows or shrinks after its size is checked is refused, and
+// nothing is left in the spool.
+func TestSourceChangeDuringSealIsRefused(t *testing.T) {
+	change := map[string]func(t *testing.T, path string){
+		"grown": func(t *testing.T, path string) {
+			out, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = out.Close() }()
+			if _, err := out.Write([]byte("more")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"truncated": func(t *testing.T, path string) {
+			if err := os.Truncate(path, 10); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, fn := range change {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			src := writeSource(t, randomBytes(t, 1000))
+			t.Cleanup(func() { freeSpace = freeBytes })
+			freeSpace = func(dir string) (uint64, error) {
+				fn(t, src)
+				return freeBytes(dir)
+			}
+			if _, err := Seal(src, f.spool, f.identity.Recipient()); !errors.Is(err, ErrSourceChanged) {
+				t.Fatalf("got %v, want ErrSourceChanged", err)
+			}
+			assertEmpty(t, f.spool)
+		})
+	}
+}
+
 func write(t *testing.T, path string, b []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, b, 0o600); err != nil {
