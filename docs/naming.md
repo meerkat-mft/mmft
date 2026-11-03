@@ -50,3 +50,16 @@ mmft run start invoices-nl
 mmft agent enroll
 mmft audit verify
 ```
+
+## Commit scopes
+
+Conventional Commits titles use one of these scopes, or none for a change across the whole repo.
+
+| Scope | Covers |
+| --- | --- |
+| `orchestrator`, `relay`, `agent`, `cli`, `console` | One component |
+| `api` | `api/` definitions and the generated code in `gen/` |
+| `db` | Schema, migrations, and `internal/db` |
+| `lab` | The test lab in `lab/` |
+| `deps` | Dependency updates |
+| An `internal/` package name | One shared package, such as `trust` or `statement` |
