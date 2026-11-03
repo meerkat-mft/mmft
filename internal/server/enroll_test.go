@@ -173,6 +173,56 @@ func TestExpiredTokenFails(t *testing.T) {
 	}
 }
 
+// A token that expires while Enroll waits for its row lock must be refused.
+func TestTokenExpiringDuringLockWaitFails(t *testing.T) {
+	h := start(t)
+	token := h.token(t, "lab", "agent-a")
+	sum := sha256.Sum256([]byte(token))
+	ctx := context.Background()
+	holder, err := h.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Rollback(ctx) }()
+	if _, err := holder.Exec(ctx, `SELECT 1 FROM enrollment_tokens WHERE token_sha256 = $1 FOR UPDATE`, sum[:]); err != nil {
+		t.Fatal(err)
+	}
+
+	req := newAgent(t, token, "agent-a")
+	client := agentv1.NewEnrollmentServiceClient(h.dial(t))
+	done := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := client.Enroll(ctx, req)
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var waiting int
+		if err := h.db.QueryRow(ctx, `
+			SELECT count(*) FROM pg_stat_activity
+			WHERE wait_event_type = 'Lock' AND query LIKE '%FROM enrollment_tokens WHERE token_sha256%FOR UPDATE%'
+				AND pid <> pg_backend_pid()`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Enroll never waited for the token's lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	h.clock.advance(TokenLifetime)
+	if err := holder.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("expired during lock wait: %v", err)
+	}
+}
+
 func TestTokenIsBoundToItsAgentName(t *testing.T) {
 	h := start(t)
 	token := h.token(t, "lab", "agent-a")

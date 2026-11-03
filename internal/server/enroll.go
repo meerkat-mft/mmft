@@ -136,7 +136,6 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 	}
 
 	sum := sha256.Sum256([]byte(req.GetToken()))
-	now := e.s.cfg.Now()
 	var resp agentv1.EnrollResponse
 	err := pgx.BeginFunc(ctx, e.s.cfg.DB, func(tx pgx.Tx) error {
 		var workspaceID, name string
@@ -146,6 +145,9 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 			SELECT workspace_id, agent_name, expires_at, used_at IS NOT NULL
 			FROM enrollment_tokens WHERE token_sha256 = $1 FOR UPDATE`, sum[:]).
 			Scan(&workspaceID, &name, &expires, &used)
+		// Read the clock only once the row is locked, so a token that expires
+		// while waiting for the lock is refused.
+		now := e.s.cfg.Now()
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && (used || !now.Before(expires) || name != req.GetAgentName())) {
 			return errBadToken
 		}
