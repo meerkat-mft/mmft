@@ -382,6 +382,7 @@ func TestVerifyManifestRejectsBadPayloads(t *testing.T) {
 		"file name":        "{" + valid + `,"file_name":"invoice.pdf"}`,
 		"repeated field":   "{" + valid + `,"sealed_size":11}`,
 		"upper case field": "{" + valid + `,"Sealed_Size":11}`,
+		"unicode alias":    "{" + valid + `,"ſealed_ſize":11}`,
 		"trailing data":    "{" + valid + "}{}",
 		"format version":   "{" + fields(2, 10, hash) + "}",
 		"short hash":       "{" + fields(1, 10, "abcd") + "}",

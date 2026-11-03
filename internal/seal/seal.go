@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"filippo.io/age"
 
@@ -174,8 +173,9 @@ type Manifest struct {
 }
 
 var (
-	uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	uuidPattern  = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	hashPattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	fieldPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 )
 
 func (d Delivery) valid() bool {
@@ -356,14 +356,15 @@ func uniqueKeys(data []byte) error {
 		if !ok {
 			return errors.New("seal: expected a field name")
 		}
-		lower := strings.ToLower(key)
-		if seen[lower] {
+		// encoding/json matches names with Unicode case folding, so "\u017f" would
+		// alias "s". Lower case ASCII names have no other form.
+		if !fieldPattern.MatchString(key) {
+			return errors.New("seal: field names must be lower case ASCII")
+		}
+		if seen[key] {
 			return errors.New("seal: repeated field")
 		}
-		if key != lower {
-			return errors.New("seal: field names must be lower case")
-		}
-		seen[lower] = true
+		seen[key] = true
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
 			return err
