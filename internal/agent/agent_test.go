@@ -371,3 +371,36 @@ func TestInstallWaitingForTheLockHonorsItsDeadline(t *testing.T) {
 		t.Fatalf("after the lock was released: %v", err)
 	}
 }
+
+func TestIncompleteStateIsRefused(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if _, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, StateFile)
+	good, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"orchestrator", "ca_fingerprint", "root_fingerprint", "agent_id", "agent_name"} {
+		for name, value := range map[string]any{"missing": nil, "invalid": "../x"} {
+			var m map[string]any
+			if err := json.Unmarshal(good, &m); err != nil {
+				t.Fatal(err)
+			}
+			if value == nil {
+				delete(m, field)
+			} else {
+				m[field] = value
+			}
+			data, _ := json.Marshal(m)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ReadState(dir); !errors.Is(err, ErrDamaged) {
+				t.Errorf("%s %s: %v", name, field, err)
+			}
+		}
+	}
+}

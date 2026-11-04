@@ -181,7 +181,10 @@ func ReadState(dir string) (State, error) {
 		return State{}, err
 	}
 	var s State
-	if err := decode(data, &s); err != nil || s.Version != formatVersion || s.Fingerprint() == "" {
+	if err := decode(data, &s); err != nil || s.Version != formatVersion || s.Fingerprint() == "" || !trust.ValidAgentID(s.AgentID) {
+		return State{}, ErrDamaged
+	}
+	if _, err := checkSettings(s.Orchestrator, s.AgentName, s.CAFingerprint, s.RootFingerprint); err != nil {
 		return State{}, ErrDamaged
 	}
 	return s, nil
@@ -208,13 +211,21 @@ func validFingerprint(s string) bool {
 	return err == nil && len(b) == 32 && hex.EncodeToString(b) == s
 }
 
-func (in Install) check() (host string, err error) {
-	host, _, err = net.SplitHostPort(in.Orchestrator)
-	if err != nil || host == "" || in.Token == "" || !trust.ValidName(in.AgentName) ||
-		!validFingerprint(in.CAFingerprint) || !validFingerprint(in.RootFingerprint) {
+// checkSettings validates the values an install and its saved state share, and
+// returns the orchestrator's host name.
+func checkSettings(orchestrator, name, caPin, rootPin string) (host string, err error) {
+	host, port, err := net.SplitHostPort(orchestrator)
+	if err != nil || host == "" || port == "" || !trust.ValidName(name) || !validFingerprint(caPin) || !validFingerprint(rootPin) {
 		return "", ErrInvalidInstall
 	}
 	return host, nil
+}
+
+func (in Install) check() (host string, err error) {
+	if in.Token == "" {
+		return "", ErrInvalidInstall
+	}
+	return checkSettings(in.Orchestrator, in.AgentName, in.CAFingerprint, in.RootFingerprint)
 }
 
 // Enroll generates the agent's keys, or reuses keys from an earlier attempt,
