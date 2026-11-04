@@ -298,3 +298,30 @@ func TestVerifyAgentRejects(t *testing.T) {
 		t.Errorf("wrong type: err = %v", err)
 	}
 }
+
+func TestCheckIdentity(t *testing.T) {
+	l, a := setup(t), newAgent(t)
+	good := identity(t, l, request(a))
+	claim, err := CheckIdentity(good, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.AgentID != testAgentID || claim.Keys().Fingerprint() != a.keys.Fingerprint() {
+		t.Fatalf("claim = %+v", claim)
+	}
+	if _, err := CheckIdentity(good, now.Add(valid)); !errors.Is(err, ErrExpired) {
+		t.Errorf("expired: err = %v", err)
+	}
+	if _, err := CheckIdentity([]byte(`{}`), now); !errors.Is(err, ErrInvalidIdentity) {
+		t.Errorf("not an envelope: err = %v", err)
+	}
+	var e statement.Envelope
+	if err := json.Unmarshal(good, &e); err != nil {
+		t.Fatal(err)
+	}
+	e.Signatures = e.Signatures[:1]
+	half, _ := json.Marshal(e)
+	if _, err := CheckIdentity(half, now); err == nil {
+		t.Error("an identity with one signature was accepted")
+	}
+}

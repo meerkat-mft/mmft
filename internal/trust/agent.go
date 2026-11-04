@@ -322,6 +322,27 @@ func VerifyAgent(identity []byte, pinnedRoot string, now time.Time) (IdentityCla
 	return claim, statement.Verifier{Key: signing, Role: statement.RoleAgent, Owner: claim.AgentID}, nil
 }
 
+// CheckIdentity verifies an identity statement against the root key embedded
+// in it. The orchestrator uses it to refuse a malformed identity before storing
+// it. It proves nothing about trust, because the orchestrator pins no root, so
+// agents always verify with VerifyAgent.
+func CheckIdentity(identity []byte, now time.Time) (IdentityClaim, error) {
+	e, err := statement.Parse(identity)
+	if err != nil {
+		return IdentityClaim{}, ErrInvalidIdentity
+	}
+	unverified, err := unverifiedClaim(e)
+	if err != nil {
+		return IdentityClaim{}, ErrInvalidIdentity
+	}
+	root, err := statement.NewPublicKey(unverified.RootEd25519, unverified.RootMLDSA65)
+	if err != nil {
+		return IdentityClaim{}, ErrInvalidIdentity
+	}
+	claim, _, err := VerifyAgent(identity, root.Fingerprint(), now)
+	return claim, err
+}
+
 func unverifiedClaim(e *statement.Envelope) (IdentityClaim, error) {
 	payload, err := base64.StdEncoding.Strict().DecodeString(e.Payload)
 	if err != nil || len(payload) > statement.MaxPayloadBytes {

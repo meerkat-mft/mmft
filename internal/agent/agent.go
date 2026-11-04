@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
@@ -23,7 +24,9 @@ import (
 
 	"filippo.io/age"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	agentv1 "mmft.dev/mmft/gen/agent/v1"
 	"mmft.dev/mmft/internal/connca"
@@ -36,7 +39,9 @@ const (
 	KeyFile   = "agent.key"
 	StateFile = "agent.json"
 	CertFile  = "connection.crt"
-	lockFile  = ".lock"
+	// IdentityFile holds the agent's verified identity statement.
+	IdentityFile = "identity.json"
+	lockFile     = ".lock"
 
 	formatVersion = 1
 )
@@ -48,6 +53,8 @@ var (
 	ErrInvalidInstall = errors.New("agent: invalid install settings")
 	ErrBadCertificate = errors.New("agent: the orchestrator returned an unusable connection certificate")
 	ErrUnsupported    = errors.New("agent: private keys can't be stored safely on this platform yet")
+	ErrNotApproved    = errors.New("agent: not approved yet")
+	ErrWrongIdentity  = errors.New("agent: the identity is for another agent or other keys")
 )
 
 type keyFile struct {
@@ -341,4 +348,102 @@ func checkCertificate(resp *agentv1.EnrollResponse, key ed25519.PrivateKey) erro
 		return fmt.Errorf("%w: wrong agent ID", ErrBadCertificate)
 	}
 	return nil
+}
+
+// FetchIdentity asks the orchestrator for the agent's identity, verifies it
+// back to the pinned trust root, and saves it. The orchestrator is trusted for
+// nothing here: an identity it altered or made up fails verification. It returns
+// ErrNotApproved until an administrator has signed the identity.
+func FetchIdentity(ctx context.Context, dir string, now func() time.Time) (trust.IdentityClaim, error) {
+	s, err := ReadState(dir)
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	keys, err := LoadKeys(dir)
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	certPEM, err := os.ReadFile(filepath.Join(filepath.Clean(dir), CertFile))
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return trust.IdentityClaim{}, ErrDamaged
+	}
+	host, err := checkSettings(s.Orchestrator, s.AgentName, s.CAFingerprint, s.RootFingerprint)
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	cfg := connca.PinnedClient(s.CAFingerprint, host, now)
+	cfg.Certificates = []tls.Certificate{{Certificate: [][]byte{block.Bytes}, PrivateKey: keys.Connection}}
+	conn, err := grpc.NewClient(s.Orchestrator, grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	resp, err := agentv1.NewAgentServiceClient(conn).GetIdentity(ctx, &agentv1.GetIdentityRequest{})
+	switch status.Code(err) {
+	case codes.OK:
+	case codes.NotFound:
+		return trust.IdentityClaim{}, ErrNotApproved
+	case codes.PermissionDenied, codes.Unauthenticated:
+		// Not the enrollment token's code, which a caller may map to a refusal.
+		return trust.IdentityClaim{}, fmt.Errorf("agent: the orchestrator refused the agent: %s", status.Convert(err).Message())
+	default:
+		return trust.IdentityClaim{}, err
+	}
+	identity := resp.GetIdentityStatement()
+	claim, err := VerifyIdentity(s, identity, now())
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	if err := replaceFile(filepath.Join(dir, IdentityFile), identity, 0o644); err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	return claim, nil
+}
+
+// VerifyIdentity checks an identity statement back to the agent's pinned root,
+// and requires it to name this agent and hold exactly its keys.
+func VerifyIdentity(s State, identity []byte, now time.Time) (trust.IdentityClaim, error) {
+	claim, _, err := trust.VerifyAgent(identity, s.RootFingerprint, now)
+	if err != nil {
+		return trust.IdentityClaim{}, err
+	}
+	if claim.AgentID != s.AgentID || claim.AgentName != s.AgentName || claim.Keys().Fingerprint() != s.Fingerprint() {
+		return trust.IdentityClaim{}, ErrWrongIdentity
+	}
+	return claim, nil
+}
+
+// replaceFile writes a file under a temporary name and renames it into place,
+// so a reader sees either the old or the new contents.
+func replaceFile(path string, data []byte, mode os.FileMode) (err error) {
+	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmp)
+		}
+	}()
+	if err := f.Chmod(mode); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

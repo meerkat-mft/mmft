@@ -23,6 +23,10 @@ service AgentService {
 
   // RenewCertificate replaces the connection certificate before it expires.
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
+
+  // GetIdentity returns the calling agent's own signed identity, or NOT_FOUND
+  // until an administrator approves it.
+  rpc GetIdentity(GetIdentityRequest) returns (GetIdentityResponse);
 }
 
 message EnrollRequest {
@@ -43,6 +47,13 @@ message EnrollRequest {
 message EnrollResponse {
   string agent_id = 1;
   bytes connection_certificate = 2;
+}
+
+message GetIdentityRequest {}
+
+message GetIdentityResponse {
+  // Agent identity statement, which the agent verifies to its pinned root.
+  bytes identity_statement = 1;
 }
 
 message RenewCertificateRequest {

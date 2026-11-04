@@ -153,6 +153,10 @@ func TestUsageErrors(t *testing.T) {
 		{"trust", "fingerprint"},
 		{"trust", "certify-admin", "--root-dir", "x", "--passphrase-file", "y", "--request", "z", "--out", "o"},
 		{"admin", "init", "--dir", "x", "--passphrase-file", "y"},
+		{"agent", "approve", "--api", "localhost:1"},
+		{"agent", "approve", "--api", "localhost:1", "--ca-fingerprint", "x", "--token-file", "x", "--admin-dir", "x",
+			"--passphrase-file", "x", "--certificate", "x", "--root-public", "x", "--root-fingerprint", "x",
+			"--fingerprints", "x", "--days", "366"},
 	} {
 		if code, _, _ := cli(t, now, args...); code != exitUsage {
 			t.Errorf("%v: code = %d", args, code)

@@ -137,6 +137,7 @@ var EnrollmentService_ServiceDesc = grpc.ServiceDesc{
 const (
 	AgentService_Connect_FullMethodName          = "/mmft.agent.v1.AgentService/Connect"
 	AgentService_RenewCertificate_FullMethodName = "/mmft.agent.v1.AgentService/RenewCertificate"
+	AgentService_GetIdentity_FullMethodName      = "/mmft.agent.v1.AgentService/GetIdentity"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -150,6 +151,9 @@ type AgentServiceClient interface {
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectRequest, ConnectResponse], error)
 	// RenewCertificate replaces the connection certificate before it expires.
 	RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error)
+	// GetIdentity returns the calling agent's own signed identity, or NOT_FOUND
+	// until an administrator approves it.
+	GetIdentity(ctx context.Context, in *GetIdentityRequest, opts ...grpc.CallOption) (*GetIdentityResponse, error)
 }
 
 type agentServiceClient struct {
@@ -183,6 +187,16 @@ func (c *agentServiceClient) RenewCertificate(ctx context.Context, in *RenewCert
 	return out, nil
 }
 
+func (c *agentServiceClient) GetIdentity(ctx context.Context, in *GetIdentityRequest, opts ...grpc.CallOption) (*GetIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIdentityResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -194,6 +208,9 @@ type AgentServiceServer interface {
 	Connect(grpc.BidiStreamingServer[ConnectRequest, ConnectResponse]) error
 	// RenewCertificate replaces the connection certificate before it expires.
 	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
+	// GetIdentity returns the calling agent's own signed identity, or NOT_FOUND
+	// until an administrator approves it.
+	GetIdentity(context.Context, *GetIdentityRequest) (*GetIdentityResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -209,6 +226,9 @@ func (UnimplementedAgentServiceServer) Connect(grpc.BidiStreamingServer[ConnectR
 }
 func (UnimplementedAgentServiceServer) RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenewCertificate not implemented")
+}
+func (UnimplementedAgentServiceServer) GetIdentity(context.Context, *GetIdentityRequest) (*GetIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetIdentity not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -256,6 +276,24 @@ func _AgentService_RenewCertificate_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_GetIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetIdentity(ctx, req.(*GetIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +304,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RenewCertificate",
 			Handler:    _AgentService_RenewCertificate_Handler,
+		},
+		{
+			MethodName: "GetIdentity",
+			Handler:    _AgentService_GetIdentity_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

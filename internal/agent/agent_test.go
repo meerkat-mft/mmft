@@ -404,3 +404,97 @@ func TestIncompleteStateIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func fetch(t *testing.T, dir string) (trust.IdentityClaim, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return FetchIdentity(ctx, dir, time.Now)
+}
+
+func TestFetchIdentityVerifiesAndSaves(t *testing.T) {
+	o := servertest.Start(t)
+	ap := servertest.NewApprover(t)
+	dir := agentDir(t)
+	in := install(o, o.Token(t, "lab", "agent-a"), "agent-a")
+	in.RootFingerprint = ap.RootFingerprint()
+	s, err := enroll(t, dir, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetch(t, dir); !errors.Is(err, ErrNotApproved) {
+		t.Fatalf("before approval: err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, IdentityFile)); !os.IsNotExist(err) {
+		t.Fatalf("identity saved before approval: %v", err)
+	}
+	identity := ap.Sign(t, s.AgentID, "lab", "agent-a", s.Keys())
+	if code := o.PutIdentity(t, s.AgentID, identity); code != 204 {
+		t.Fatalf("put identity: %d", code)
+	}
+	claim, err := fetch(t, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.AgentID != s.AgentID || claim.Workspace != "lab" {
+		t.Fatalf("claim = %+v", claim)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, IdentityFile))
+	if err != nil || !bytes.Equal(saved, identity) {
+		t.Fatalf("saved identity differs: %v", err)
+	}
+	if _, err := fetch(t, dir); err != nil {
+		t.Fatalf("repeat fetch: %v", err)
+	}
+}
+
+func TestIdentityFromAnotherRootIsRefused(t *testing.T) {
+	o := servertest.Start(t)
+	pinned, other := servertest.NewApprover(t), servertest.NewApprover(t)
+	dir := agentDir(t)
+	in := install(o, o.Token(t, "lab", "agent-a"), "agent-a")
+	in.RootFingerprint = pinned.RootFingerprint()
+	s, err := enroll(t, dir, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A compromised orchestrator can store an identity signed under its own root.
+	if code := o.PutIdentity(t, s.AgentID, other.Sign(t, s.AgentID, "lab", "agent-a", s.Keys())); code != 204 {
+		t.Fatalf("put identity: %d", code)
+	}
+	if _, err := fetch(t, dir); !errors.Is(err, trust.ErrWrongRoot) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, IdentityFile)); !os.IsNotExist(err) {
+		t.Fatalf("unverified identity saved: %v", err)
+	}
+}
+
+func TestVerifyIdentityRequiresThisAgent(t *testing.T) {
+	ap := servertest.NewApprover(t)
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	in := install(o, o.Token(t, "lab", "agent-a"), "agent-a")
+	in.RootFingerprint = ap.RootFingerprint()
+	s, err := enroll(t, dir, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDir := agentDir(t)
+	other, err := LoadOrCreateKeys(otherDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, identity := range map[string][]byte{
+		"other keys":     ap.Sign(t, s.AgentID, "lab", "agent-a", other.Public()),
+		"other agent ID": ap.Sign(t, "019a3f2e-7c11-7d3e-9f7b-000000000000", "lab", "agent-a", s.Keys()),
+		"other name":     ap.Sign(t, s.AgentID, "lab", "agent-b", s.Keys()),
+	} {
+		if _, err := VerifyIdentity(s, identity, time.Now()); !errors.Is(err, ErrWrongIdentity) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	if _, err := VerifyIdentity(s, ap.Sign(t, s.AgentID, "lab", "agent-a", s.Keys()), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}

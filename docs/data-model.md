@@ -34,6 +34,10 @@ workspaces ─┬─ agents ─┬─ agent_identities
 
 Every delivery belongs to a run, including a manual one. Flows arrive in M2, when `runs.flow_id` gets its foreign key.
 
+## Signed statements
+
+A statement's ID is the SHA-256 of its exact stored bytes, so the same statement is stored once. Approving an agent stores its identity statement, links it from the agent's active `agent_identities` row with its expiry, and sets the agent to `approved`. That row's statement is set once. Renewal arrives with `mmft agent renew`.
+
 ## Personal data and evidence
 
 Audit events are hash-chained, so a record can't change. They must therefore never hold a file name. They refer to the delivery ID and the sealed file hash, and the name lives only in `delivery_files`.

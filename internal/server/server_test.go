@@ -277,7 +277,8 @@ func TestAPIAuthentication(t *testing.T) {
 		{"no token", "/api/v1/agents", "", 401},
 		{"wrong token", "/api/v1/agents", "wrong", 401},
 		{"hash used as token", "/api/v1/agents", strings.Repeat("0", 64), 401},
-		{"right token", "/api/v1/agents", adminToken, 404},
+		{"right token", "/api/v1/agents", adminToken, 200},
+		{"unknown route", "/api/v1/flows", adminToken, 404},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

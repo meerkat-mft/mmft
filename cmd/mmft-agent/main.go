@@ -31,6 +31,8 @@ const (
 	exitExists  = 3
 	// exitRefused means the orchestrator refused the enrollment token.
 	exitRefused = 4
+	// exitPending means no administrator has approved the agent yet.
+	exitPending = 5
 )
 
 const (
@@ -44,6 +46,7 @@ const usage = `usage:
   mmft-agent install --orchestrator HOST:PORT --name NAME --token-file FILE
                      --ca-fingerprint HEX --root-fingerprint HEX [--dir DIR]
   mmft-agent fingerprint [--dir DIR] [--json]
+  mmft-agent identity [--dir DIR]
 `
 
 var errUsage = errors.New("incorrect usage")
@@ -63,6 +66,9 @@ func run(args []string, stdout, stderr io.Writer, now func() time.Time) int {
 	case errors.Is(err, os.ErrExist):
 		_ = output(stderr, map[string]string{"error": "already enrolled"})
 		return exitExists
+	case errors.Is(err, agent.ErrNotApproved):
+		_ = output(stderr, map[string]string{"error": "the agent is not approved yet"})
+		return exitPending
 	case status.Code(err) == codes.PermissionDenied:
 		_ = output(stderr, map[string]string{"error": "the orchestrator refused the enrollment token"})
 		return exitRefused
@@ -88,6 +94,8 @@ func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		return install(rest, stdout, stderr, now)
 	case "fingerprint":
 		return fingerprint(rest, stdout, stderr)
+	case "identity":
+		return identity(rest, stdout, stderr, now)
 	default:
 		return errUsage
 	}
@@ -199,4 +207,27 @@ func fingerprint(args []string, stdout, stderr io.Writer) error {
 	}
 	_, err = fmt.Fprintf(stdout, "agent_id     %s\nagent_name   %s\nfingerprint  %s\n", s.AgentID, s.AgentName, s.Fingerprint())
 	return err
+}
+
+// identity fetches the agent's signed identity and verifies it back to the
+// pinned trust root, which ADR 0011 requires before the agent accepts work.
+func identity(args []string, stdout, stderr io.Writer, now func() time.Time) error {
+	fs := flag.NewFlagSet("identity", flag.ContinueOnError)
+	dir := fs.String("dir", defaultDir, "directory for the agent's keys and state")
+	if err := parse(fs, args, stderr); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), enrollTimeout)
+	defer cancel()
+	claim, err := agent.FetchIdentity(ctx, *dir, now)
+	if err != nil {
+		return err
+	}
+	return output(stdout, map[string]string{
+		"agent_id":    claim.AgentID,
+		"agent_name":  claim.AgentName,
+		"workspace":   claim.Workspace,
+		"fingerprint": claim.Keys().Fingerprint(),
+		"not_after":   claim.NotAfter.Format(time.RFC3339),
+	})
 }
