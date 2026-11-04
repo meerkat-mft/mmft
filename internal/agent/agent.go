@@ -36,6 +36,7 @@ const (
 	KeyFile   = "agent.key"
 	StateFile = "agent.json"
 	CertFile  = "connection.crt"
+	lockFile  = ".lock"
 
 	formatVersion = 1
 )
@@ -46,6 +47,7 @@ var (
 	ErrDamaged        = errors.New("agent: key or state file is damaged")
 	ErrInvalidInstall = errors.New("agent: invalid install settings")
 	ErrBadCertificate = errors.New("agent: the orchestrator returned an unusable connection certificate")
+	ErrUnsupported    = errors.New("agent: private keys can't be stored safely on this platform yet")
 )
 
 type keyFile struct {
@@ -72,6 +74,9 @@ func (k *Keys) Public() trust.AgentKeys {
 // LoadOrCreateKeys loads the agent's keys from dir, or generates and saves them
 // if there are none. Keys are never replaced, so a repeated install keeps them.
 func LoadOrCreateKeys(dir string) (*Keys, error) {
+	if !keyStorageSupported {
+		return nil, ErrUnsupported
+	}
 	if err := trust.PrepareDir(dir); err != nil {
 		return nil, err
 	}
@@ -103,7 +108,12 @@ func LoadOrCreateKeys(dir string) (*Keys, error) {
 		return nil, err
 	}
 	defer clear(data)
-	if err := trust.WriteNew(filepath.Join(dir, KeyFile), data, 0o600); err != nil {
+	err = trust.WriteNew(filepath.Join(dir, KeyFile), data, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		// Another process saved its keys first, so use those.
+		return LoadKeys(dir)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return &Keys{Signer: signer, Encryption: enc, Connection: conn}, nil
@@ -111,6 +121,9 @@ func LoadOrCreateKeys(dir string) (*Keys, error) {
 
 // LoadKeys reads the agent's keys, and refuses a file that others can read.
 func LoadKeys(dir string) (*Keys, error) {
+	if !keyStorageSupported {
+		return nil, ErrUnsupported
+	}
 	data, err := trust.ReadPrivate(filepath.Join(dir, KeyFile))
 	if err != nil {
 		return nil, err
@@ -207,12 +220,25 @@ func (in Install) check() (host string, err error) {
 // Enroll generates the agent's keys, or reuses keys from an earlier attempt,
 // and enrolls with the orchestrator, trusting it only through the pinned CA
 // fingerprint. It returns os.ErrExist with the saved state if the agent is
-// already enrolled, so a repeated install changes nothing.
+// already enrolled, so a repeated install changes nothing. If the response was
+// lost, or saving it failed, a retry with the same token and the kept keys
+// gets the same agent. Installs into one directory run one at a time.
 func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (State, error) {
 	host, err := in.check()
 	if err != nil {
 		return State{}, err
 	}
+	if !keyStorageSupported {
+		return State{}, ErrUnsupported
+	}
+	if err := trust.PrepareDir(dir); err != nil {
+		return State{}, err
+	}
+	unlock, err := lock(dir)
+	if err != nil {
+		return State{}, err
+	}
+	defer unlock()
 	if s, err := ReadState(dir); err == nil {
 		return s, os.ErrExist
 	} else if !errors.Is(err, ErrNotEnrolled) {

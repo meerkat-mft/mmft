@@ -3,6 +3,10 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net"
 	"os"
@@ -12,10 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	agentv1 "mmft.dev/mmft/gen/agent/v1"
+	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/server/servertest"
+	"mmft.dev/mmft/internal/trust"
 )
 
 const rootPin = "1111111111111111111111111111111111111111111111111111111111111111"
@@ -198,5 +207,137 @@ func TestDamagedFilesAreRefused(t *testing.T) {
 	}
 	if _, err := LoadKeys(dir); !errors.Is(err, ErrDamaged) {
 		t.Fatalf("keys: %v", err)
+	}
+}
+
+// enrollDirectly enrolls with dir's keys but saves nothing, as when the
+// orchestrator commits and the response is lost on the way back.
+func enrollDirectly(t *testing.T, dir string, o servertest.Orchestrator, token, name string) string {
+	t.Helper()
+	keys, err := LoadOrCreateKeys(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := keys.Public()
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, keys.Connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := trust.ProveEnrollment(keys.Signer, token, name, pub.Recipient, csr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofBytes, _ := json.Marshal(proof)
+	host, _, _ := net.SplitHostPort(o.GRPC)
+	conn, err := grpc.NewClient(o.GRPC, grpc.WithTransportCredentials(credentials.NewTLS(connca.PinnedClient(o.CA.Fingerprint(), host, time.Now))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := agentv1.NewEnrollmentServiceClient(conn).Enroll(ctx, &agentv1.EnrollRequest{
+		Token: token, AgentName: name, Ed25519PublicKey: pub.Ed25519, Mldsa65PublicKey: pub.MLDSA65,
+		EncryptionRecipient: pub.Recipient, CertificateRequest: csr, ProofStatement: proofBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.GetAgentId()
+}
+
+func TestRetryAfterALostResponseGetsTheSameAgent(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	token := o.Token(t, "lab", "agent-a")
+	id := enrollDirectly(t, dir, o, token, "agent-a")
+	s, err := enroll(t, dir, install(o, token, "agent-a"))
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if s.AgentID != id {
+		t.Fatalf("retry enrolled %q, want %q", s.AgentID, id)
+	}
+	// The used token still refuses an agent with other keys.
+	if _, err := enroll(t, agentDir(t), install(o, token, "agent-a")); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("other keys: %v", err)
+	}
+}
+
+func TestRetryAfterAFailedSaveGetsTheSameAgent(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if _, err := LoadOrCreateKeys(dir); err != nil {
+		t.Fatal(err)
+	}
+	// A non-empty directory in the certificate's place makes saving fail after
+	// the orchestrator has committed the enrollment.
+	blocker := filepath.Join(dir, CertFile)
+	if err := os.MkdirAll(filepath.Join(blocker, "x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	token := o.Token(t, "lab", "agent-a")
+	if _, err := enroll(t, dir, install(o, token, "agent-a")); err == nil {
+		t.Fatal("enrollment saved over a directory")
+	}
+	if _, err := ReadState(dir); !errors.Is(err, ErrNotEnrolled) {
+		t.Fatalf("state after a failed save: %v", err)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	first, err := enroll(t, dir, install(o, token, "agent-a"))
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if again, err := ReadState(dir); err != nil || again.AgentID != first.AgentID {
+		t.Fatalf("saved state: %+v, %v", again, err)
+	}
+}
+
+func TestConcurrentInstallsAgree(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	names := []string{"agent-a", "agent-b"}
+	type result struct {
+		s   State
+		err error
+	}
+	results := make(chan result, len(names))
+	for _, name := range names {
+		in := install(o, o.Token(t, "lab", name), name)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			s, err := Enroll(ctx, dir, in, time.Now)
+			results <- result{s, err}
+		}()
+	}
+	var enrolled, existed []State
+	for range names {
+		r := <-results
+		switch {
+		case r.err == nil:
+			enrolled = append(enrolled, r.s)
+		case errors.Is(r.err, os.ErrExist):
+			existed = append(existed, r.s)
+		default:
+			t.Fatalf("install: %v", r.err)
+		}
+	}
+	if len(enrolled) != 1 || len(existed) != 1 || existed[0].AgentID != enrolled[0].AgentID {
+		t.Fatalf("enrolled %+v, existed %+v", enrolled, existed)
+	}
+	certPEM, err := os.ReadFile(filepath.Join(dir, CertFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, err := connca.AgentID(cert); err != nil || id != enrolled[0].AgentID {
+		t.Fatalf("certificate names %q, state names %q", id, enrolled[0].AgentID)
 	}
 }

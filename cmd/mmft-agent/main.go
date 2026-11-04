@@ -153,6 +153,12 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 	if err := parse(fs, args, stderr, "orchestrator", "name", "token-file", "ca-fingerprint", "root-fingerprint"); err != nil {
 		return err
 	}
+	// A repeat run reports the saved agent before it needs the token, which a
+	// deployment tool may have removed after the first run.
+	if s, err := agent.ReadState(*dir); err == nil {
+		_ = output(stdout, stateJSON(s))
+		return os.ErrExist
+	}
 	token, err := readToken(*tokenFile)
 	if err != nil {
 		return err

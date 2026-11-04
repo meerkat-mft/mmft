@@ -76,8 +76,21 @@ func TestInstallAndFingerprint(t *testing.T) {
 		t.Fatalf("repeat install: %d %q", code, out)
 	}
 
+	// A deployment tool may delete the one-use token file after the first run.
+	if err := os.Remove(token); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ = cli(t, installArgs(o, dir, "agent-a", token)...)
+	if code != exitExists || parseJSON(t, out)["agent_id"] != installed["agent_id"] {
+		t.Fatalf("repeat install without the token file: %d %q", code, out)
+	}
+	token = tokenFile(t, o.Token(t, "lab", "agent-x"))
+	if code, _, _ := cli(t, installArgs(o, filepath.Join(t.TempDir(), "agent"), "agent-x", token)...); code != exitOK {
+		t.Fatalf("install agent-x: %d", code)
+	}
+
 	// Another host with the used token is refused with its own exit code.
-	code, _, errOut = cli(t, installArgs(o, filepath.Join(t.TempDir(), "agent"), "agent-a", token)...)
+	code, _, errOut = cli(t, installArgs(o, filepath.Join(t.TempDir(), "agent"), "agent-x", token)...)
 	if code != exitRefused {
 		t.Fatalf("used token: %d %s", code, errOut)
 	}
