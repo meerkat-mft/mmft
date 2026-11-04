@@ -341,3 +341,33 @@ func TestConcurrentInstallsAgree(t *testing.T) {
 		t.Fatalf("certificate names %q, state names %q", id, enrolled[0].AgentID)
 	}
 }
+
+// An install waiting behind a stalled one gives up at its own deadline.
+func TestInstallWaitingForTheLockHonorsItsDeadline(t *testing.T) {
+	if !keyStorageSupported {
+		t.Skip("no key storage on this platform")
+	}
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if err := trust.PrepareDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := lock(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := install(o, o.Token(t, "lab", "agent-a"), "agent-a")
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := Enroll(ctx, dir, in, time.Now); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waiting install: %v", err)
+	}
+	if waited := time.Since(start); waited > 2*time.Second {
+		t.Fatalf("waited %v past a 300ms deadline", waited)
+	}
+	unlock()
+	if _, err := enroll(t, dir, in); err != nil {
+		t.Fatalf("after the lock was released: %v", err)
+	}
+}

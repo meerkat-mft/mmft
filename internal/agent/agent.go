@@ -234,7 +234,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	if err := trust.PrepareDir(dir); err != nil {
 		return State{}, err
 	}
-	unlock, err := lock(dir)
+	unlock, err := lock(ctx, dir)
 	if err != nil {
 		return State{}, err
 	}
