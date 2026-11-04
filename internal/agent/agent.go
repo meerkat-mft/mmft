@@ -48,6 +48,8 @@ var (
 	ErrInvalidInstall = errors.New("agent: invalid install settings")
 	ErrBadCertificate = errors.New("agent: the orchestrator returned an unusable connection certificate")
 	ErrUnsupported    = errors.New("agent: private keys can't be stored safely on this platform yet")
+	// ErrAlreadyEnrolled is returned only with a valid saved state.
+	ErrAlreadyEnrolled = errors.New("agent: already enrolled")
 )
 
 type keyFile struct {
@@ -230,8 +232,8 @@ func (in Install) check() (host string, err error) {
 
 // Enroll generates the agent's keys, or reuses keys from an earlier attempt,
 // and enrolls with the orchestrator, trusting it only through the pinned CA
-// fingerprint. It returns os.ErrExist with the saved state if the agent is
-// already enrolled, so a repeated install changes nothing. If the response was
+// fingerprint. It returns ErrAlreadyEnrolled with the saved state if the agent
+// is already enrolled, so a repeated install changes nothing. If the response was
 // lost, or saving it failed, a retry with the same token and the kept keys
 // gets the same agent. Installs into one directory run one at a time.
 func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (State, error) {
@@ -251,7 +253,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	}
 	defer unlock()
 	if s, err := ReadState(dir); err == nil {
-		return s, os.ErrExist
+		return s, ErrAlreadyEnrolled
 	} else if !errors.Is(err, ErrNotEnrolled) {
 		return State{}, err
 	}
@@ -299,11 +301,11 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	// finished enrollment. A leftover certificate from a failed attempt goes.
 	certPath := filepath.Join(dir, CertFile)
 	if err := os.Remove(certPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return State{}, err
+		return State{}, saveFailed(err)
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: resp.GetConnectionCertificate()})
 	if err := trust.WriteNew(certPath, certPEM, 0o644); err != nil {
-		return State{}, err
+		return State{}, saveFailed(err)
 	}
 	s := State{
 		Version:         formatVersion,
@@ -321,9 +323,16 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 	if err := trust.WriteNew(filepath.Join(dir, StateFile), append(data, '\n'), 0o644); err != nil {
-		return State{}, err
+		return State{}, saveFailed(err)
 	}
 	return s, nil
+}
+
+// saveFailed reports a failure to save an enrollment the orchestrator already
+// recorded. It never matches os.ErrExist, so an existing file in the way can't
+// pass for an earlier enrollment. A retry with the same token completes it.
+func saveFailed(err error) error {
+	return fmt.Errorf("agent: saving the enrollment failed, so run install again: %v", err)
 }
 
 // checkCertificate requires the certificate to hold this agent's connection key
