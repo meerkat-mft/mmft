@@ -40,6 +40,11 @@ var (
 	namePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 )
 
+// ValidAgentID reports whether a string is an agent ID in its one form.
+func ValidAgentID(id string) bool {
+	return idPattern.MatchString(id)
+}
+
 // ValidName reports whether a string can name an agent or workspace.
 func ValidName(name string) bool {
 	return namePattern.MatchString(name)
