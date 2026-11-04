@@ -55,6 +55,7 @@ var (
 	ErrUnsupported    = errors.New("agent: private keys can't be stored safely on this platform yet")
 	ErrNotApproved    = errors.New("agent: not approved yet")
 	ErrWrongIdentity  = errors.New("agent: the identity is for another agent or other keys")
+	ErrSaveFailed     = errors.New("agent: saving the enrollment failed")
 	// ErrAlreadyEnrolled is returned only with a valid saved state.
 	ErrAlreadyEnrolled = errors.New("agent: already enrolled")
 )
@@ -339,7 +340,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 // recorded. It never matches os.ErrExist, so an existing file in the way can't
 // pass for an earlier enrollment. A retry with the same token completes it.
 func saveFailed(err error) error {
-	return fmt.Errorf("agent: saving the enrollment failed, so run install again: %v", err)
+	return fmt.Errorf("%w, so run install again: %s", ErrSaveFailed, err.Error())
 }
 
 // checkCertificate requires the certificate to hold this agent's connection key

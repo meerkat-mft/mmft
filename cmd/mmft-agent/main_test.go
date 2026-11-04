@@ -116,7 +116,7 @@ func TestFailedSaveIsNotReportedAsEnrolled(t *testing.T) {
 	}
 	token := tokenFile(t, o.Token(t, "lab", "agent-a"))
 	code, out, errOut := cli(t, installArgs(o, dir, "agent-a", token)...)
-	if code != exitFailure || strings.Contains(errOut, "already enrolled") {
+	if code != exitFailure || strings.Contains(errOut, "already enrolled") || !strings.Contains(errOut, "run install again") {
 		t.Fatalf("failed save: exit %d, stdout %q, stderr %s", code, out, errOut)
 	}
 	if err := os.Remove(state); err != nil {
