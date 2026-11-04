@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -535,3 +536,41 @@ func TestFreeBytes(t *testing.T) {
 		t.Fatal("no error for a missing directory")
 	}
 }
+
+// File names can be personal data, so no error from Seal or Open may name a
+// file. The cause stays testable with errors.Is.
+func TestErrorsNameNoFiles(t *testing.T) {
+	f := newFixture(t)
+	const name = "payroll-for-jane-doe.csv"
+	missing := filepath.Join(t.TempDir(), name)
+	dir := filepath.Join(t.TempDir(), name)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sealed, manifest := f.sealAndSign(t, randomBytes(t, 100), delivery(deliveryA))
+
+	cases := map[string]struct {
+		err  error
+		want error
+	}{
+		"missing source":   {err: second(Seal(missing, f.spool, f.identity.Recipient())), want: fs.ErrNotExist},
+		"directory source": {err: second(Seal(dir, f.spool, f.identity.Recipient())), want: ErrNotRegular},
+		"missing spool":    {err: second(Seal(writeSource(t, []byte("x")), filepath.Join(dir, "spool"), f.identity.Recipient())), want: fs.ErrNotExist},
+		"missing sealed":   {err: second(Open(missing, manifest, f.identity, f.dest)), want: fs.ErrNotExist},
+		"missing dest":     {err: second(Open(sealed.Path, manifest, f.identity, filepath.Join(dir, "dest"))), want: fs.ErrNotExist},
+	}
+	for label, c := range cases {
+		if c.err == nil {
+			t.Errorf("%s: no error", label)
+			continue
+		}
+		if strings.Contains(c.err.Error(), name) {
+			t.Errorf("%s: error names the file: %v", label, c.err)
+		}
+		if c.want != nil && !errors.Is(c.err, c.want) {
+			t.Errorf("%s: %v is not %v", label, c.err, c.want)
+		}
+	}
+}
+
+func second[T any](_ T, err error) error { return err }

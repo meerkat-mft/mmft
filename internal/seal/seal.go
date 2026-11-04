@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,6 +51,7 @@ var (
 	ErrManifestMismatch = errors.New("seal: delivery manifest is for a different delivery")
 	ErrSizeMismatch     = errors.New("seal: sealed file size does not match the manifest")
 	ErrHashMismatch     = errors.New("seal: sealed file hash does not match the manifest")
+	ErrNotRegular       = errors.New("seal: source is not a regular file")
 )
 
 // freeSpace reports the bytes available to an unprivileged writer in dir. Tests
@@ -81,6 +83,7 @@ func MaxSealedSize(plaintext int64) uint64 {
 // file in spoolDir. It first checks that spoolDir has room for the sealed copy,
 // and fails with ErrNoSpace rather than filling the disk.
 func Seal(src, spoolDir string, recipient *age.HybridRecipient) (s Sealed, err error) {
+	defer func() { err = pathless(err) }()
 	if recipient == nil {
 		return Sealed{}, errors.New("seal: no recipient")
 	}
@@ -94,7 +97,7 @@ func Seal(src, spoolDir string, recipient *age.HybridRecipient) (s Sealed, err e
 		return Sealed{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return Sealed{}, fmt.Errorf("seal: %s is not a regular file", src)
+		return Sealed{}, ErrNotRegular
 	}
 	size := info.Size()
 	need := MaxSealedSize(size)
@@ -249,7 +252,19 @@ func Open(sealedPath string, m Manifest, identity *age.HybridIdentity, destDir s
 	if identity == nil {
 		return "", errors.New("seal: no identity")
 	}
-	return open(sealedPath, m, identity, destDir)
+	path, err := open(sealedPath, m, identity, destDir)
+	return path, pathless(err)
+}
+
+// pathless removes the file path from an error, because a path can hold a
+// file name, which is personal data and must not reach logs or the
+// orchestrator. The operation and cause stay, so errors.Is still works.
+func pathless(err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return fmt.Errorf("seal: %s: %w", pe.Op, pe.Err)
+	}
+	return err
 }
 
 func open(sealedPath string, m Manifest, identity age.Identity, destDir string) (path string, err error) {
