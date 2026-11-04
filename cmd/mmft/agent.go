@@ -32,6 +32,8 @@ const (
 // its host, so its identity was not signed.
 var errRefused = errors.New("some agents were refused")
 
+var errRedirect = errors.New("the orchestrator API answered with a redirect, which is refused")
+
 // hostAgent is what `mmft-agent fingerprint --json` prints on a host.
 type hostAgent struct {
 	AgentID     string `json:"agent_id"`
@@ -127,6 +129,9 @@ func newAPIClient(address, caPin, token string, now func() time.Time) (*apiClien
 		http: &http.Client{
 			Timeout:   apiTimeout,
 			Transport: &http.Transport{TLSClientConfig: connca.PinnedClient(caPin, host, now)},
+			// The API never redirects. Following one could send the token to
+			// another origin, even over plain HTTP on the same host.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return errRedirect },
 		},
 	}, nil
 }
