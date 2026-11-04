@@ -63,7 +63,7 @@ func run(args []string, stdout, stderr io.Writer, now func() time.Time) int {
 	case errors.Is(err, errUsage):
 		_, _ = io.WriteString(stderr, usage)
 		return exitUsage
-	case errors.Is(err, os.ErrExist):
+	case errors.Is(err, agent.ErrAlreadyEnrolled):
 		_ = output(stderr, map[string]string{"error": "already enrolled"})
 		return exitExists
 	case errors.Is(err, agent.ErrNotApproved):
@@ -165,7 +165,7 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 	// deployment tool may have removed after the first run.
 	if s, err := agent.ReadState(*dir); err == nil {
 		_ = output(stdout, stateJSON(s))
-		return os.ErrExist
+		return agent.ErrAlreadyEnrolled
 	}
 	token, err := readToken(*tokenFile)
 	if err != nil {
@@ -180,7 +180,7 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 		CAFingerprint:   *caPin,
 		RootFingerprint: *rootPin,
 	}, now)
-	if errors.Is(err, os.ErrExist) {
+	if errors.Is(err, agent.ErrAlreadyEnrolled) {
 		// Print the existing agent too, so a repeat run still reports it.
 		_ = output(stdout, stateJSON(s))
 		return err
