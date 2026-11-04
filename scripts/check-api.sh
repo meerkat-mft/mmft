@@ -5,9 +5,12 @@ set -eu
 cd "$(dirname "$0")/.."
 
 buf="go run github.com/bufbuild/buf/cmd/buf@v1.75.0"
-redocly="npx --yes @redocly/cli@2.72.1"
+# Redocly is installed from tools/package-lock.json, which pins its exact
+# version and hash. Install scripts never run.
+redocly="tools/node_modules/.bin/redocly"
 
 (cd api && $buf lint)
+npm ci --prefix tools --ignore-scripts --no-audit --no-fund --loglevel=error
 $redocly lint api/openapi.yaml
 
 rm -rf gen

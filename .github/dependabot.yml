@@ -19,6 +19,16 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /build
     schedule:
