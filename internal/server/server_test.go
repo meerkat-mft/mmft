@@ -198,6 +198,24 @@ func TestAgentServiceChecksAgentStatus(t *testing.T) {
 	}
 }
 
+// If the agent can't be looked up, the call fails closed and never reaches
+// the service.
+func TestAgentLookupFailureFailsClosed(t *testing.T) {
+	h := start(t)
+	h.addAgent(t, agentID, "approved")
+	cert := clientCert(t, h.ca, agentID)
+	h.db.Close()
+	if got := callConnect(t, h.dial(t, cert)); got != codes.Unavailable {
+		t.Fatalf("stream: %v", got)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := agentv1.NewAgentServiceClient(h.dial(t, cert)).RenewCertificate(ctx, &agentv1.RenewCertificateRequest{})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("unary: %v", err)
+	}
+}
+
 func TestCertificateFromAnotherCAIsRefused(t *testing.T) {
 	h := start(t)
 	other, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
