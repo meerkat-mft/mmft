@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -159,12 +160,22 @@ func (c *apiClient) do(method, path string, body []byte, want int, out any) erro
 			Title string `json:"title"`
 		}
 		_ = json.Unmarshal(data, &p)
-		return fmt.Errorf("the orchestrator answered %d: %s", resp.StatusCode, p.Title)
+		return &statusError{code: resp.StatusCode, title: p.Title}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.Unmarshal(data, out)
+}
+
+// statusError is an answer from the orchestrator other than the one expected.
+type statusError struct {
+	code  int
+	title string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("the orchestrator answered %d: %s", e.code, e.title)
 }
 
 // listedAgent is an agent as the orchestrator reports it. Nothing in it is
@@ -335,4 +346,67 @@ func agentApprove(args []string, stdout, stderr io.Writer, now func() time.Time)
 		return errRefused
 	}
 	return nil
+}
+
+// validFingerprint reports whether s is a fingerprint in its one form: 64
+// lower-case hex characters.
+func validFingerprint(s string) bool {
+	b, err := hex.DecodeString(s)
+	return err == nil && len(b) == 32 && hex.EncodeToString(b) == s
+}
+
+// agentToken creates a one-use enrollment token and prints every value
+// `mmft-agent install` needs, so a deployment tool can pass them to the host.
+// An agent that already exists with this name exits with exitExists.
+func agentToken(args []string, stdout, stderr io.Writer, now func() time.Time) error {
+	fs := flag.NewFlagSet("agent token", flag.ContinueOnError)
+	api := fs.String("api", "", "host and port of the orchestrator's REST API")
+	caPin := fs.String("ca-fingerprint", "", "connection CA fingerprint")
+	tokenFile := fs.String("token-file", "", "file holding the API token")
+	workspace := fs.String("workspace", "", "workspace for the agent")
+	name := fs.String("name", "", "name of the agent")
+	orchestrator := fs.String("orchestrator", "", "host and port agents use for the orchestrator's agent service")
+	rootPin := fs.String("root-fingerprint", "", "trust root fingerprint the agent will pin")
+	if err := parse(fs, args, stderr, "api", "ca-fingerprint", "token-file", "workspace", "name", "orchestrator", "root-fingerprint"); err != nil {
+		return err
+	}
+	if !trust.ValidName(*workspace) || !trust.ValidName(*name) || !validFingerprint(*caPin) || !validFingerprint(*rootPin) {
+		return errUsage
+	}
+	if host, port, err := net.SplitHostPort(*orchestrator); err != nil || host == "" || port == "" {
+		return errUsage
+	}
+	token, err := readToken(*tokenFile)
+	if err != nil {
+		return err
+	}
+	client, err := newAPIClient(*api, *caPin, token, now)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(map[string]string{"agent_name": *name, "workspace": *workspace})
+	if err != nil {
+		return err
+	}
+	var created struct {
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	err = client.do(http.MethodPost, "/agents/enrollment-tokens", body, http.StatusCreated, &created)
+	var se *statusError
+	if errors.As(err, &se) && se.code == http.StatusConflict {
+		return os.ErrExist
+	}
+	if err != nil {
+		return err
+	}
+	return output(stdout, map[string]string{
+		"workspace":        *workspace,
+		"agent_name":       *name,
+		"orchestrator":     *orchestrator,
+		"ca_fingerprint":   *caPin,
+		"root_fingerprint": *rootPin,
+		"token":            created.Token,
+		"expires_at":       created.ExpiresAt,
+	})
 }

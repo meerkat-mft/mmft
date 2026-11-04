@@ -1,18 +1,22 @@
 # Lab
 
-A local test lab in Docker containers, which runs on one laptop. Run `lab/smoke.sh` to start it, check it, and remove it.
+A local test lab in Docker containers, which runs on one laptop. Each script starts the lab, checks it, and removes it.
+
+- `lab/smoke.sh` checks the networks, filesystems, and restarts that later failure tests rely on.
+- `lab/enroll.sh` enrolls both agents unattended, as a deployment tool would: `mmft agent token`, `mmft-agent install`, `mmft-agent fingerprint --json`, `mmft agent approve --fingerprints`, and `mmft-agent identity`. It then checks that a used token, an expired token, and a changed fingerprint are refused. The fingerprints pass from the agents to the admin machine through the script, never through the orchestrator.
 
 | Service | Networks | Purpose |
 | --- | --- | --- |
-| `orchestrator` | `core`, `site-a`, `site-b` | Placeholder for the orchestrator |
+| `orchestrator` | `core`, `site-a`, `site-b` | The orchestrator, which `enroll.sh` starts |
 | `relay` | `core`, `site-a`, `site-b` | Placeholder for the relay |
 | `postgres` | `core` | Database |
+| `admin` | `core` | An administrator's machine, with the trust root and administrator key |
 | `agent-a` | `site-a` | Source agent |
 | `agent-b` | `site-b` | Destination agent |
 
 All networks are internal. Agents can reach the orchestrator and relay, but not each other, Postgres, or the internet. Services run as an unprivileged user with a read-only filesystem. Each agent's spool is limited to 16 MB, so that full-disk tests are quick.
 
-The Postgres password in `compose.yaml` is a lab placeholder.
+The Postgres password, the admin API token, and the passphrase in `compose.yaml` and `enroll.sh` are lab placeholders. Agent keys and the connection CA live on volumes, so they survive a container restart. The admin machine keeps its keys in memory only.
 
 ## Limits
 

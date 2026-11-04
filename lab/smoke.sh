@@ -39,6 +39,8 @@ label="agent-b cannot resolve agent-a"
 expect_fail in_lab agent-b getent hosts agent-a
 label="agent-a cannot resolve postgres"
 expect_fail in_lab agent-a getent hosts postgres
+label="agent-b cannot resolve the admin machine"
+expect_fail in_lab agent-b getent hosts admin
 # TCP checks with a real listener, so a failure means blocked and not missing.
 docker compose exec -d -T relay nc -lk -p 9000 -e /bin/true
 docker compose exec -d -T agent-b nc -lk -p 9000 -e /bin/true
