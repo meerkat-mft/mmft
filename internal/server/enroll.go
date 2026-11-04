@@ -116,9 +116,37 @@ type enrollment struct {
 	s *Server
 }
 
+// repeat answers a retry by the agent that already used this token, for example
+// after its first response was lost. The proof showed the caller holds the
+// keys, so only the same keys get a new certificate for the same agent, and
+// only while neither the agent nor those keys are revoked. Anyone else is
+// refused as for any used token.
+func (e enrollment) repeat(ctx context.Context, tx pgx.Tx, agentID string, keys trust.AgentKeys, csr []byte, now time.Time, resp *agentv1.EnrollResponse) error {
+	var agentStatus, recipient string
+	var ed, ml []byte
+	var identityRevoked bool
+	err := tx.QueryRow(ctx, `
+		SELECT a.status, i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient, i.revoked_at IS NOT NULL
+		FROM agents a JOIN agent_identities i ON i.agent_id = a.id
+		WHERE a.id = $1 ORDER BY i.id LIMIT 1`, agentID).Scan(&agentStatus, &ed, &ml, &recipient, &identityRevoked)
+	if err != nil {
+		return err
+	}
+	if agentStatus == "revoked" || identityRevoked || !bytes.Equal(ed, keys.Ed25519) || !bytes.Equal(ml, keys.MLDSA65) || recipient != keys.Recipient {
+		return errBadToken
+	}
+	cert, err := e.s.cfg.Authority.SignAgent(csr, agentID, now)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "the certificate request is invalid")
+	}
+	resp.AgentId, resp.ConnectionCertificate = agentID, cert
+	return nil
+}
+
 // Enroll checks the proof of key possession, then claims the token, creates the
 // agent as pending approval, and issues its first connection certificate, all in
-// one transaction. A bad request never uses up a token.
+// one transaction. A bad request never uses up a token, and the agent that used
+// a token can repeat the call with the same keys.
 func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*agentv1.EnrollResponse, error) {
 	keys := trust.AgentKeys{
 		Ed25519:   req.GetEd25519PublicKey(),
@@ -140,19 +168,25 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 	err := pgx.BeginFunc(ctx, e.s.cfg.DB, func(tx pgx.Tx) error {
 		var workspaceID, name string
 		var expires time.Time
-		var used bool
+		var usedBy *string
 		err := tx.QueryRow(ctx, `
-			SELECT workspace_id, agent_name, expires_at, used_at IS NOT NULL
+			SELECT workspace_id, agent_name, expires_at, agent_id
 			FROM enrollment_tokens WHERE token_sha256 = $1 FOR UPDATE`, sum[:]).
-			Scan(&workspaceID, &name, &expires, &used)
+			Scan(&workspaceID, &name, &expires, &usedBy)
 		// Read the clock only once the row is locked, so a token that expires
 		// while waiting for the lock is refused.
 		now := e.s.cfg.Now()
-		if errors.Is(err, pgx.ErrNoRows) || (err == nil && (used || !now.Before(expires) || name != req.GetAgentName())) {
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && name != req.GetAgentName()) {
 			return errBadToken
 		}
 		if err != nil {
 			return err
+		}
+		if usedBy != nil {
+			return e.repeat(ctx, tx, *usedBy, keys, req.GetCertificateRequest(), now, &resp)
+		}
+		if !now.Before(expires) {
+			return errBadToken
 		}
 		var agentID string
 		err = tx.QueryRow(ctx, `
