@@ -46,18 +46,19 @@ const (
 
 // Errors returned by this package.
 var (
-	ErrWeakPassphrase     = errors.New("trust: passphrase is too weak")
-	ErrWrongRoot          = errors.New("trust: root key does not match the pinned fingerprint")
-	ErrWrongAdministrator = errors.New("trust: administrator key does not match the expected fingerprint")
-	ErrRootAsAdmin        = errors.New("trust: the root key can't be an administrator key")
-	ErrNotYetValid        = errors.New("trust: certificate is not valid yet")
-	ErrExpired            = errors.New("trust: certificate has expired")
-	ErrInvalidClaim       = errors.New("trust: invalid certificate")
-	ErrBadLifetime        = errors.New("trust: certificate lifetime is out of range")
-	ErrWrongKeyFile       = errors.New("trust: key file is damaged or has a different role")
-	ErrInvalidOwner       = errors.New("trust: owner must be lower-case letters, digits, or . _ @ -")
-	ErrNotPrivate         = errors.New("trust: file or directory is not private to this user")
-	ErrInvalidPublic      = errors.New("trust: invalid public key file")
+	ErrWeakPassphrase      = errors.New("trust: passphrase is too weak")
+	ErrWrongRoot           = errors.New("trust: root key does not match the pinned fingerprint")
+	ErrWrongAdministrator  = errors.New("trust: administrator key does not match the expected fingerprint")
+	ErrRootAsAdmin         = errors.New("trust: the root key can't be an administrator key")
+	ErrNotYetValid         = errors.New("trust: certificate is not valid yet")
+	ErrExpired             = errors.New("trust: certificate has expired")
+	ErrInvalidClaim        = errors.New("trust: invalid certificate")
+	ErrBadLifetime         = errors.New("trust: certificate lifetime is out of range")
+	ErrWrongKeyFile        = errors.New("trust: key file is damaged or has a different role")
+	ErrInvalidOwner        = errors.New("trust: owner must be lower-case letters, digits, or . _ @ -")
+	ErrNotPrivate          = errors.New("trust: file or directory is not private to this user")
+	ErrUnsupportedPlatform = errors.New("trust: private key files can't be protected on Windows yet, so use Linux, macOS, or WSL")
+	ErrInvalidPublic       = errors.New("trust: invalid public key file")
 )
 
 // scryptWorkFactor sets the cost of a passphrase guess. Tests lower it.
