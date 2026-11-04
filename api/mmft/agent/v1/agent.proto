@@ -8,7 +8,8 @@ package mmft.agent.v1;
 option go_package = "mmft.dev/mmft/gen/agent/v1;agentv1";
 
 // EnrollmentService is the only service reachable without a connection
-// certificate. A token authorizes one call.
+// certificate. A token enrolls one agent, which may repeat the call with the
+// same keys if it lost the response.
 service EnrollmentService {
   // Enroll registers a new agent and returns its first connection certificate.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
