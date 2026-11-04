@@ -31,7 +31,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // EnrollmentService is the only service reachable without a connection
-// certificate. A token authorizes one call.
+// certificate. A token enrolls one agent, which may repeat the call with the
+// same keys if it lost the response.
 type EnrollmentServiceClient interface {
 	// Enroll registers a new agent and returns its first connection certificate.
 	Enroll(ctx context.Context, in *EnrollRequest, opts ...grpc.CallOption) (*EnrollResponse, error)
@@ -60,7 +61,8 @@ func (c *enrollmentServiceClient) Enroll(ctx context.Context, in *EnrollRequest,
 // for forward compatibility.
 //
 // EnrollmentService is the only service reachable without a connection
-// certificate. A token authorizes one call.
+// certificate. A token enrolls one agent, which may repeat the call with the
+// same keys if it lost the response.
 type EnrollmentServiceServer interface {
 	// Enroll registers a new agent and returns its first connection certificate.
 	Enroll(context.Context, *EnrollRequest) (*EnrollResponse, error)

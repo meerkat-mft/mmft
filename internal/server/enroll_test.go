@@ -170,6 +170,36 @@ func TestUsedTokenFails(t *testing.T) {
 	}
 }
 
+// An agent whose response was lost can repeat its request with the same keys,
+// even after the token expires, and gets the same agent.
+func TestSameAgentCanRepeatEnrollment(t *testing.T) {
+	h := start(t)
+	req := newAgent(t, h.token(t, "lab", "agent-a"), "agent-a")
+	first, err := h.enroll(t, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.clock.advance(TokenLifetime)
+	again, err := h.enroll(t, req)
+	if err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	if again.GetAgentId() != first.GetAgentId() || len(again.GetConnectionCertificate()) == 0 {
+		t.Fatalf("repeat gave agent %q, want %q", again.GetAgentId(), first.GetAgentId())
+	}
+	var agents int
+	if err := h.db.QueryRow(context.Background(), `SELECT count(*) FROM agents`).Scan(&agents); err != nil || agents != 1 {
+		t.Fatalf("agents = %d, %v", agents, err)
+	}
+
+	if _, err := h.db.Exec(context.Background(), `UPDATE agents SET status = 'revoked' WHERE id = $1`, first.GetAgentId()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.enroll(t, req); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked agent: %v", err)
+	}
+}
+
 func TestExpiredTokenFails(t *testing.T) {
 	h := start(t)
 	token := h.token(t, "lab", "agent-a")
