@@ -1,3 +1,8 @@
+//go:build !windows
+
+// These tests store private keys, which Windows refuses until its access
+// control lists are checked. See perm_windows.go.
+
 package main
 
 import (
