@@ -13,3 +13,4 @@ id_ed25519*
 # Build output
 /bin/
 /dist/
+/tools/node_modules/

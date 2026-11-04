@@ -1,0 +1,9 @@
+{
+  "name": "mmft-tools",
+  "private": true,
+  "description": "Pinned Node tools for scripts/check-api.sh. Install with npm ci, never npm install.",
+  "license": "AGPL-3.0-only",
+  "devDependencies": {
+    "@redocly/cli": "2.72.1"
+  }
+}
