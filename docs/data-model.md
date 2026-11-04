@@ -52,6 +52,7 @@ Delivery manifests and receipts must not contain file names either, because `sig
 | Page through runs in a workspace | `runs (workspace_id, id DESC)` |
 | Find the active identity of an agent | Partial unique index on `agent_identities` |
 | Claim an enrollment token | Primary key |
+| Check an agent's status on each agent call | Primary key |
 | Delete expired tokens | Partial index on unused tokens by `expires_at` |
 | Delete old file names | Primary key, because UUIDv7 IDs are time-ordered |
 

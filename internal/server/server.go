@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -70,8 +71,8 @@ func New(cfg Config) (*Server, error) {
 	s.grpc = grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(s.tlsConfig())),
 		grpc.MaxRecvMsgSize(maxMessageBytes),
-		grpc.UnaryInterceptor(unaryAuth),
-		grpc.StreamInterceptor(streamAuth),
+		grpc.UnaryInterceptor(s.unaryAuth),
+		grpc.StreamInterceptor(s.streamAuth),
 	)
 	agentv1.RegisterEnrollmentServiceServer(s.grpc, enrollment{s: s})
 	agentv1.RegisterAgentServiceServer(s.grpc, agentv1.UnimplementedAgentServiceServer{})
@@ -106,12 +107,28 @@ func (s *Server) certificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return cert, nil
 }
 
-func requireAgent(ctx context.Context, method string) error {
+// requireAgent admits enrollment calls, and otherwise requires a connection
+// certificate for an agent that exists and isn't revoked. A certificate stays
+// valid for up to a day, so revoking an agent must not wait for it to expire.
+func (s *Server) requireAgent(ctx context.Context, method string) error {
 	if strings.HasPrefix(method, enrollmentMethods) {
 		return nil
 	}
-	_, err := AgentFromContext(ctx)
-	return err
+	id, err := AgentFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	var agentStatus string
+	err = s.cfg.DB.QueryRow(ctx, `SELECT status FROM agents WHERE id = $1`, id).Scan(&agentStatus)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return status.Error(codes.Unauthenticated, "the certificate names an unknown agent")
+	case err != nil:
+		return status.Error(codes.Unavailable, "could not check the agent")
+	case agentStatus == "revoked":
+		return status.Error(codes.PermissionDenied, "the agent is revoked")
+	}
+	return nil
 }
 
 // AgentFromContext returns the agent ID proven by the connection certificate.
@@ -131,15 +148,15 @@ func AgentFromContext(ctx context.Context) (string, error) {
 	return id, nil
 }
 
-func unaryAuth(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if err := requireAgent(ctx, info.FullMethod); err != nil {
+func (s *Server) unaryAuth(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if err := s.requireAgent(ctx, info.FullMethod); err != nil {
 		return nil, err
 	}
 	return handler(ctx, req)
 }
 
-func streamAuth(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if err := requireAgent(ss.Context(), info.FullMethod); err != nil {
+func (s *Server) streamAuth(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if err := s.requireAgent(ss.Context(), info.FullMethod); err != nil {
 		return err
 	}
 	return handler(srv, ss)
