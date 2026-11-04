@@ -118,19 +118,21 @@ type enrollment struct {
 
 // repeat answers a retry by the agent that already used this token, for example
 // after its first response was lost. The proof showed the caller holds the
-// keys, so only the same keys get a new certificate for the same agent. Anyone
-// else is refused as for any used token.
+// keys, so only the same keys get a new certificate for the same agent, and
+// only while neither the agent nor those keys are revoked. Anyone else is
+// refused as for any used token.
 func (e enrollment) repeat(ctx context.Context, tx pgx.Tx, agentID string, keys trust.AgentKeys, csr []byte, now time.Time, resp *agentv1.EnrollResponse) error {
 	var agentStatus, recipient string
 	var ed, ml []byte
+	var identityRevoked bool
 	err := tx.QueryRow(ctx, `
-		SELECT a.status, i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient
+		SELECT a.status, i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient, i.revoked_at IS NOT NULL
 		FROM agents a JOIN agent_identities i ON i.agent_id = a.id
-		WHERE a.id = $1 ORDER BY i.id LIMIT 1`, agentID).Scan(&agentStatus, &ed, &ml, &recipient)
+		WHERE a.id = $1 ORDER BY i.id LIMIT 1`, agentID).Scan(&agentStatus, &ed, &ml, &recipient, &identityRevoked)
 	if err != nil {
 		return err
 	}
-	if agentStatus == "revoked" || !bytes.Equal(ed, keys.Ed25519) || !bytes.Equal(ml, keys.MLDSA65) || recipient != keys.Recipient {
+	if agentStatus == "revoked" || identityRevoked || !bytes.Equal(ed, keys.Ed25519) || !bytes.Equal(ml, keys.MLDSA65) || recipient != keys.Recipient {
 		return errBadToken
 	}
 	cert, err := e.s.cfg.Authority.SignAgent(csr, agentID, now)

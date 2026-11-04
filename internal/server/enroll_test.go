@@ -192,6 +192,12 @@ func TestSameAgentCanRepeatEnrollment(t *testing.T) {
 		t.Fatalf("agents = %d, %v", agents, err)
 	}
 
+	if _, err := h.db.Exec(context.Background(), `UPDATE agent_identities SET revoked_at = now() WHERE agent_id = $1`, first.GetAgentId()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.enroll(t, req); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked identity: %v", err)
+	}
 	if _, err := h.db.Exec(context.Background(), `UPDATE agents SET status = 'revoked' WHERE id = $1`, first.GetAgentId()); err != nil {
 		t.Fatal(err)
 	}
