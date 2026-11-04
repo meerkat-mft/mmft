@@ -146,6 +146,7 @@ func TestAgentServiceRequiresACertificate(t *testing.T) {
 	if got := callConnect(t, h.dial(t)); got != codes.Unauthenticated {
 		t.Fatalf("no certificate: %v", got)
 	}
+	h.addAgent(t, agentID, "approved")
 	if got := callConnect(t, h.dial(t, clientCert(t, h.ca, agentID))); got != codes.Unimplemented {
 		t.Fatalf("valid certificate: %v", got)
 	}
@@ -154,6 +155,46 @@ func TestAgentServiceRequiresACertificate(t *testing.T) {
 	_, err := agentv1.NewAgentServiceClient(h.dial(t)).RenewCertificate(ctx, &agentv1.RenewCertificateRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unary without a certificate: %v", err)
+	}
+}
+
+// addAgent stores an agent with this ID and status, as enrollment would.
+func (h harness) addAgent(t *testing.T, id, agentStatus string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := h.db.Exec(ctx, `INSERT INTO workspaces (name) VALUES ('lab') ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO agents (id, workspace_id, name, status)
+		SELECT $1::uuid, id, 'agent-' || right($1::text, 4), $2 FROM workspaces WHERE name = 'lab'`, id, agentStatus); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A valid certificate is not enough: the agent must exist and not be revoked.
+func TestAgentServiceChecksAgentStatus(t *testing.T) {
+	h := start(t)
+	if got := callConnect(t, h.dial(t, clientCert(t, h.ca, agentID))); got != codes.Unauthenticated {
+		t.Fatalf("unknown agent: %v", got)
+	}
+	for _, s := range []string{"pending_approval", "approved"} {
+		id := "019a3f2e-7c11-7d3e-9f7b-00000000000" + map[string]string{"pending_approval": "1", "approved": "2"}[s]
+		h.addAgent(t, id, s)
+		if got := callConnect(t, h.dial(t, clientCert(t, h.ca, id))); got != codes.Unimplemented {
+			t.Fatalf("%s agent: %v", s, got)
+		}
+	}
+	revoked := "019a3f2e-7c11-7d3e-9f7b-000000000003"
+	h.addAgent(t, revoked, "revoked")
+	if got := callConnect(t, h.dial(t, clientCert(t, h.ca, revoked))); got != codes.PermissionDenied {
+		t.Fatalf("revoked agent: %v", got)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := agentv1.NewAgentServiceClient(h.dial(t, clientCert(t, h.ca, revoked))).RenewCertificate(ctx, &agentv1.RenewCertificateRequest{})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked agent, unary: %v", err)
 	}
 }
 
