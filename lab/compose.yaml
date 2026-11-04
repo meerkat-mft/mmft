@@ -25,6 +25,12 @@ services:
     networks: [site-a, site-b, core]
     environment:
       MMFT_DATABASE_URL: postgres://mmft:lab-only-not-a-secret@postgres:5432/mmft?sslmode=disable
+      MMFT_CA_DIR: /var/lib/mmft/ca
+      MMFT_SERVER_NAMES: orchestrator
+      # SHA-256 of the lab placeholder admin token in enroll.sh.
+      MMFT_ADMIN_TOKEN_SHA256: 979764906a9c6981445fc9d6c48070eb0e4400f274714e09dbfdc70176c34caf
+    volumes:
+      - orchestrator-ca:/var/lib/mmft/ca
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,15 +55,34 @@ services:
       timeout: 2s
       retries: 30
 
+  # An administrator's machine, which holds the trust root and administrator
+  # key. It reaches only the orchestrator's API.
+  admin:
+    <<: *service
+    hostname: admin
+    networks: [core]
+    tmpfs:
+      - /var/lib/mmft/admin:size=16m,uid=10001,mode=0700
+
   agent-a:
     <<: *agent
     hostname: agent-a
     networks: [site-a]
+    volumes:
+      - agent-a:/var/lib/mmft/agent
 
   agent-b:
     <<: *agent
     hostname: agent-b
     networks: [site-b]
+    volumes:
+      - agent-b:/var/lib/mmft/agent
+
+# Keys and state survive a container restart, as on a real host.
+volumes:
+  orchestrator-ca:
+  agent-a:
+  agent-b:
 
 networks:
   core:

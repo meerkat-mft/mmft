@@ -36,6 +36,8 @@ const usage = `usage:
                            --request FILE --admin-fingerprint HEX --out FILE [--days N]
   mmft trust verify-admin --root-public FILE --root-fingerprint HEX --certificate FILE
   mmft admin init --dir DIR --owner NAME --passphrase-file FILE
+  mmft agent token --api HOST:PORT --ca-fingerprint HEX --token-file FILE --workspace NAME
+                   --name NAME --orchestrator HOST:PORT --root-fingerprint HEX
   mmft agent approve --api HOST:PORT --ca-fingerprint HEX --token-file FILE
                      --admin-dir DIR --passphrase-file FILE --certificate FILE
                      --root-public FILE --root-fingerprint HEX --fingerprints FILE [--days N]
@@ -90,6 +92,8 @@ func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		return verifyAdmin(rest, stdout, stderr, now)
 	case "admin init":
 		return adminInit(rest, stdout, stderr)
+	case "agent token":
+		return agentToken(rest, stdout, stderr, now)
 	case "agent approve":
 		return agentApprove(rest, stdout, stderr, now)
 	default:

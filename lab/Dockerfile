@@ -8,7 +8,8 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 go build -o /out/ ./cmd/...
 
 FROM alpine:3.22
-RUN apk add --no-cache iproute2 && adduser -D -H -u 10001 mmft && install -d -o mmft /var/lib/mmft/spool
+RUN apk add --no-cache iproute2 && adduser -D -H -u 10001 mmft && install -d -o mmft /var/lib/mmft/spool \
+    && install -d -o mmft -m 0700 /var/lib/mmft/agent /var/lib/mmft/ca
 COPY --from=build /out/ /usr/local/bin/
 USER mmft
 CMD ["sleep", "infinity"]

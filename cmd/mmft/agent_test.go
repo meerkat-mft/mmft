@@ -173,3 +173,31 @@ func TestApproveChecksItsInputsFirst(t *testing.T) {
 		t.Errorf("shared token file: %d %s", code, errOut)
 	}
 }
+
+func (a approveSetup) token(t *testing.T, name string) (int, map[string]string) {
+	t.Helper()
+	code, out, _ := cli(t, time.Now(), "agent", "token", "--api", a.o.API, "--ca-fingerprint", a.o.CA.Fingerprint(),
+		"--token-file", a.tokenFile, "--workspace", "lab", "--name", name, "--orchestrator", a.o.GRPC, "--root-fingerprint", a.rootFP)
+	return code, out
+}
+
+func TestTokenPrintsWhatTheInstallNeeds(t *testing.T) {
+	a := newApproveSetup(t)
+	code, got := a.token(t, "agent-a")
+	if code != exitOK || got["token"] == "" || got["expires_at"] == "" {
+		t.Fatalf("token: %d %v", code, got)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := agent.Enroll(ctx, filepath.Join(t.TempDir(), "agent"), agent.Install{
+		Orchestrator: got["orchestrator"], Token: got["token"], AgentName: got["agent_name"],
+		CAFingerprint: got["ca_fingerprint"], RootFingerprint: got["root_fingerprint"],
+	}, time.Now)
+	if err != nil {
+		t.Fatalf("install with the printed values: %v", err)
+	}
+	// The agent exists now, which a repeat run reports as a safe repeat.
+	if code, _ := a.token(t, "agent-a"); code != exitExists {
+		t.Fatalf("existing agent: %d", code)
+	}
+}
