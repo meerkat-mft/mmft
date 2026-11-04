@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,35 @@ func TestInstallAndFingerprint(t *testing.T) {
 	code, _, errOut = cli(t, installArgs(o, filepath.Join(t.TempDir(), "agent"), "agent-x", token)...)
 	if code != exitRefused {
 		t.Fatalf("used token: %d %s", code, errOut)
+	}
+}
+
+// A save that fails after the orchestrator enrolled the agent must never look
+// like a safe repeat run, and a later run must finish the enrollment.
+func TestFailedSaveIsNotReportedAsEnrolled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no key storage on Windows yet")
+	}
+	o := servertest.Start(t)
+	dir := filepath.Join(t.TempDir(), "agent")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A dangling link reads as missing state, but blocks the create-only write.
+	state := filepath.Join(dir, agent.StateFile)
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), state); err != nil {
+		t.Fatal(err)
+	}
+	token := tokenFile(t, o.Token(t, "lab", "agent-a"))
+	code, out, errOut := cli(t, installArgs(o, dir, "agent-a", token)...)
+	if code != exitFailure || strings.Contains(errOut, "already enrolled") {
+		t.Fatalf("failed save: exit %d, stdout %q, stderr %s", code, out, errOut)
+	}
+	if err := os.Remove(state); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := cli(t, installArgs(o, dir, "agent-a", token)...); code != exitOK {
+		t.Fatalf("retry: %d %s", code, errOut)
 	}
 }
 
