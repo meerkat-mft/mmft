@@ -24,6 +24,8 @@ const (
 	exitFailure = 1
 	exitUsage   = 2
 	exitExists  = 3
+	// exitRefused means an agent did not match what was collected from its host.
+	exitRefused = 4
 )
 
 const usage = `usage:
@@ -34,6 +36,9 @@ const usage = `usage:
                            --request FILE --admin-fingerprint HEX --out FILE [--days N]
   mmft trust verify-admin --root-public FILE --root-fingerprint HEX --certificate FILE
   mmft admin init --dir DIR --owner NAME --passphrase-file FILE
+  mmft agent approve --api HOST:PORT --ca-fingerprint HEX --token-file FILE
+                     --admin-dir DIR --passphrase-file FILE --certificate FILE
+                     --root-public FILE --root-fingerprint HEX --fingerprints FILE [--days N]
 `
 
 var errUsage = errors.New("incorrect usage")
@@ -50,6 +55,9 @@ func run(args []string, stdout, stderr io.Writer, now func() time.Time) int {
 	case errors.Is(err, errUsage):
 		_, _ = io.WriteString(stderr, usage)
 		return exitUsage
+	case errors.Is(err, errRefused):
+		_ = output(stderr, map[string]string{"error": err.Error()})
+		return exitRefused
 	case errors.Is(err, os.ErrExist):
 		_ = output(stderr, map[string]string{"error": "already exists"})
 		return exitExists
@@ -82,6 +90,8 @@ func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		return verifyAdmin(rest, stdout, stderr, now)
 	case "admin init":
 		return adminInit(rest, stdout, stderr)
+	case "agent approve":
+		return agentApprove(rest, stdout, stderr, now)
 	default:
 		return errUsage
 	}

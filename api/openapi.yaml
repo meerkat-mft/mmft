@@ -53,10 +53,16 @@ paths:
     get:
       operationId: listAgents
       summary: List agents
+      description: Agents in ID order. The cursor is the `next_cursor` of the previous page.
       tags: [Agents]
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending_approval, approved, revoked]
       responses:
         '200':
           description: A page of agents.
@@ -72,6 +78,8 @@ paths:
                       $ref: '#/components/schemas/Agent'
                   next_cursor:
                     type: string
+        '400':
+          $ref: '#/components/responses/Problem'
         '401':
           $ref: '#/components/responses/Problem'
   /agents/enrollment-tokens:
@@ -134,7 +142,7 @@ paths:
     put:
       operationId: putAgentIdentity
       summary: Store a signed agent identity
-      description: The CLI signs the identity. The orchestrator stores the statement and passes it to agents, which verify it.
+      description: The CLI signs the identity, and storing it approves the agent. The orchestrator refuses a statement that is malformed or doesn't match the agent and its keys, stores the exact bytes, and passes them to the agent, which verifies them to its pinned trust root. Storing the same statement again changes nothing.
       tags: [Agents]
       requestBody:
         required: true
@@ -147,8 +155,16 @@ paths:
           description: The identity was stored.
         '400':
           $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
         '404':
           $ref: '#/components/responses/Problem'
+        '409':
+          description: The agent is revoked or already has a different identity.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /flows:
     get:
       operationId: listFlows
@@ -422,7 +438,22 @@ components:
           $ref: '#/components/schemas/Name'
         status:
           type: string
-          enum: [pending_approval, online, offline, revoked, identity_expired]
+          description: Presence states arrive with the agent connection.
+          enum: [pending_approval, approved, online, offline, revoked, identity_expired]
+        public_keys:
+          description: The agent's current public keys, from which the CLI recomputes its fingerprint. Untrusted until compared with the host.
+          type: object
+          required: [ed25519, mldsa65, encryption_recipient]
+          properties:
+            ed25519:
+              type: string
+              contentEncoding: base64
+            mldsa65:
+              type: string
+              contentEncoding: base64
+            encryption_recipient:
+              type: string
+              maxLength: 4096
         agent_version:
           type: string
           maxLength: 64

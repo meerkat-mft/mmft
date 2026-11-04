@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"mmft.dev/mmft/internal/agent"
 	"mmft.dev/mmft/internal/server/servertest"
 )
 
@@ -118,5 +119,38 @@ func TestUsageAndFailures(t *testing.T) {
 	}
 	if code, out, _ := cli(t, "version"); code != exitOK || !strings.HasPrefix(out, "mmft-agent") {
 		t.Errorf("version: %d %q", code, out)
+	}
+}
+
+func TestIdentityWaitsForApproval(t *testing.T) {
+	o := servertest.Start(t)
+	ap := servertest.NewApprover(t)
+	dir := filepath.Join(t.TempDir(), "agent")
+	args := installArgs(o, dir, "agent-a", tokenFile(t, o.Token(t, "lab", "agent-a")))
+	args[len(args)-1] = ap.RootFingerprint()
+	code, out, errOut := cli(t, args...)
+	if code != exitOK {
+		t.Fatalf("install: %d %s", code, errOut)
+	}
+	installed := parseJSON(t, out)
+
+	code, _, errOut = cli(t, "identity", "--dir", dir)
+	if code != exitPending || !strings.Contains(errOut, "not approved") {
+		t.Fatalf("before approval: %d %s", code, errOut)
+	}
+	s, err := agent.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := o.PutIdentity(t, s.AgentID, ap.Sign(t, s.AgentID, "lab", "agent-a", s.Keys())); code != 204 {
+		t.Fatalf("put identity: %d", code)
+	}
+	code, out, errOut = cli(t, "identity", "--dir", dir)
+	if code != exitOK {
+		t.Fatalf("identity: %d %s", code, errOut)
+	}
+	got := parseJSON(t, out)
+	if got["agent_id"] != installed["agent_id"] || got["fingerprint"] != installed["fingerprint"] || got["workspace"] != "lab" || got["not_after"] == "" {
+		t.Fatalf("identity = %v", got)
 	}
 }

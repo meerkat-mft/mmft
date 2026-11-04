@@ -18,6 +18,8 @@ import (
 	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/db/dbtest"
 	"mmft.dev/mmft/internal/server"
+	"mmft.dev/mmft/internal/statement"
+	"mmft.dev/mmft/internal/trust"
 )
 
 // AdminToken is the bootstrap token the test orchestrator accepts.
@@ -69,17 +71,20 @@ func byName(addr net.Addr) string {
 	return net.JoinHostPort("localhost", port)
 }
 
+func (o Orchestrator) client() *http.Client {
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: connca.PinnedClient(o.CA.Fingerprint(), "localhost", time.Now)}}
+}
+
 // Token creates an enrollment token through the REST API.
 func (o Orchestrator) Token(t testing.TB, workspace, name string) string {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"agent_name": name, "workspace": workspace})
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: connca.PinnedClient(o.CA.Fingerprint(), "localhost", time.Now)}}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://"+o.API+"/api/v1/agents/enrollment-tokens", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+AdminToken)
-	resp, err := client.Do(req)
+	resp, err := o.client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,4 +96,75 @@ func (o Orchestrator) Token(t testing.TB, workspace, name string) string {
 		t.Fatalf("create token: %d %v", resp.StatusCode, err)
 	}
 	return out.Token
+}
+
+// PutIdentity stores an identity statement through the REST API and returns
+// the HTTP status.
+func (o Orchestrator) PutIdentity(t testing.TB, agentID string, identity []byte) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, "https://"+o.API+"/api/v1/agents/"+agentID+"/identity", bytes.NewReader(identity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+AdminToken)
+	resp, err := o.client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// Approver signs agent identities with a fresh trust root and administrator
+// key, held in memory.
+type Approver struct {
+	Root        *statement.Signer
+	Admin       *statement.Signer
+	Certificate []byte
+}
+
+// NewApprover creates a root and an administrator key certified for a day.
+func NewApprover(t testing.TB) Approver {
+	t.Helper()
+	root, err := statement.GenerateSigner(statement.RoleRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := statement.GenerateSigner(statement.RoleAdministrator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ed, ml := admin.Public().Bytes()
+	e, err := trust.CertifyAdministrator(root, root.Public().Fingerprint(),
+		trust.PublicRecord{Version: 1, Owner: "sam.lee", Ed25519: ed, MLDSA65: ml}, admin.Public().Fingerprint(), time.Now(), 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Approver{Root: root, Admin: admin, Certificate: cert}
+}
+
+// RootFingerprint is the fingerprint agents pin.
+func (a Approver) RootFingerprint() string {
+	return a.Root.Public().Fingerprint()
+}
+
+// Sign signs an identity for an agent, valid for an hour.
+func (a Approver) Sign(t testing.TB, agentID, workspace, name string, keys trust.AgentKeys) []byte {
+	t.Helper()
+	e, err := trust.CertifyAgent(a.Admin, a.Certificate, a.Root.Public(), a.RootFingerprint(), trust.AgentRequest{
+		AgentID: agentID, Workspace: workspace, AgentName: name, Keys: keys,
+		ExpectedFingerprint: keys.Fingerprint(), ExpectedID: agentID, ExpectedName: name,
+	}, time.Now(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

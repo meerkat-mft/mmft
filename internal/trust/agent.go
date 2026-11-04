@@ -272,8 +272,14 @@ func compactJSON(data []byte) (json.RawMessage, error) {
 // verify against it, and the identity against the administrator's key. It
 // returns the claim and a verifier for the agent's signing key.
 func VerifyAgent(identity []byte, pinnedRoot string, now time.Time) (IdentityClaim, statement.Verifier, error) {
-	fail := func(err error) (IdentityClaim, statement.Verifier, error) {
-		return IdentityClaim{}, statement.Verifier{}, err
+	claim, v, _, err := verifyAgent(identity, pinnedRoot, now)
+	return claim, v, err
+}
+
+// verifyAgent is VerifyAgent, and also returns the statement's ID.
+func verifyAgent(identity []byte, pinnedRoot string, now time.Time) (IdentityClaim, statement.Verifier, string, error) {
+	fail := func(err error) (IdentityClaim, statement.Verifier, string, error) {
+		return IdentityClaim{}, statement.Verifier{}, "", err
 	}
 	e, err := statement.Parse(identity)
 	if err != nil {
@@ -319,7 +325,29 @@ func VerifyAgent(identity []byte, pinnedRoot string, now time.Time) (IdentityCla
 	if !now.Before(claim.NotAfter) {
 		return fail(ErrExpired)
 	}
-	return claim, statement.Verifier{Key: signing, Role: statement.RoleAgent, Owner: claim.AgentID}, nil
+	return claim, statement.Verifier{Key: signing, Role: statement.RoleAgent, Owner: claim.AgentID}, got.ID, nil
+}
+
+// CheckIdentity verifies an identity statement against the root key embedded
+// in it, and returns the claim and the statement's ID, which doesn't depend on
+// its signatures or formatting. The orchestrator uses it to refuse a malformed
+// identity before storing it. It proves nothing about trust, because the
+// orchestrator pins no root, so agents always verify with VerifyAgent.
+func CheckIdentity(identity []byte, now time.Time) (IdentityClaim, string, error) {
+	e, err := statement.Parse(identity)
+	if err != nil {
+		return IdentityClaim{}, "", ErrInvalidIdentity
+	}
+	unverified, err := unverifiedClaim(e)
+	if err != nil {
+		return IdentityClaim{}, "", ErrInvalidIdentity
+	}
+	root, err := statement.NewPublicKey(unverified.RootEd25519, unverified.RootMLDSA65)
+	if err != nil {
+		return IdentityClaim{}, "", ErrInvalidIdentity
+	}
+	claim, _, id, err := verifyAgent(identity, root.Fingerprint(), now)
+	return claim, id, err
 }
 
 func unverifiedClaim(e *statement.Envelope) (IdentityClaim, error) {

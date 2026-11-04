@@ -235,6 +235,87 @@ func (x *EnrollResponse) GetConnectionCertificate() []byte {
 	return nil
 }
 
+type GetIdentityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIdentityRequest) Reset() {
+	*x = GetIdentityRequest{}
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIdentityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIdentityRequest) ProtoMessage() {}
+
+func (x *GetIdentityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIdentityRequest.ProtoReflect.Descriptor instead.
+func (*GetIdentityRequest) Descriptor() ([]byte, []int) {
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{2}
+}
+
+type GetIdentityResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Agent identity statement, which the agent verifies to its pinned root.
+	IdentityStatement []byte `protobuf:"bytes,1,opt,name=identity_statement,json=identityStatement,proto3" json:"identity_statement,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *GetIdentityResponse) Reset() {
+	*x = GetIdentityResponse{}
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIdentityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIdentityResponse) ProtoMessage() {}
+
+func (x *GetIdentityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIdentityResponse.ProtoReflect.Descriptor instead.
+func (*GetIdentityResponse) Descriptor() ([]byte, []int) {
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetIdentityResponse) GetIdentityStatement() []byte {
+	if x != nil {
+		return x.IdentityStatement
+	}
+	return nil
+}
+
 type RenewCertificateRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	CertificateRequest []byte                 `protobuf:"bytes,1,opt,name=certificate_request,json=certificateRequest,proto3" json:"certificate_request,omitempty"`
@@ -244,7 +325,7 @@ type RenewCertificateRequest struct {
 
 func (x *RenewCertificateRequest) Reset() {
 	*x = RenewCertificateRequest{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[2]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -256,7 +337,7 @@ func (x *RenewCertificateRequest) String() string {
 func (*RenewCertificateRequest) ProtoMessage() {}
 
 func (x *RenewCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[2]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -269,7 +350,7 @@ func (x *RenewCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewCertificateRequest.ProtoReflect.Descriptor instead.
 func (*RenewCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{2}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RenewCertificateRequest) GetCertificateRequest() []byte {
@@ -288,7 +369,7 @@ type RenewCertificateResponse struct {
 
 func (x *RenewCertificateResponse) Reset() {
 	*x = RenewCertificateResponse{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[3]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -300,7 +381,7 @@ func (x *RenewCertificateResponse) String() string {
 func (*RenewCertificateResponse) ProtoMessage() {}
 
 func (x *RenewCertificateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[3]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -313,7 +394,7 @@ func (x *RenewCertificateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewCertificateResponse.ProtoReflect.Descriptor instead.
 func (*RenewCertificateResponse) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{3}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RenewCertificateResponse) GetConnectionCertificate() []byte {
@@ -340,7 +421,7 @@ type ConnectRequest struct {
 
 func (x *ConnectRequest) Reset() {
 	*x = ConnectRequest{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +433,7 @@ func (x *ConnectRequest) String() string {
 func (*ConnectRequest) ProtoMessage() {}
 
 func (x *ConnectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +446,7 @@ func (x *ConnectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectRequest.ProtoReflect.Descriptor instead.
 func (*ConnectRequest) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ConnectRequest) GetMessage() isConnectRequest_Message {
@@ -488,7 +569,7 @@ type ConnectResponse struct {
 
 func (x *ConnectResponse) Reset() {
 	*x = ConnectResponse{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +581,7 @@ func (x *ConnectResponse) String() string {
 func (*ConnectResponse) ProtoMessage() {}
 
 func (x *ConnectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +594,7 @@ func (x *ConnectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectResponse.ProtoReflect.Descriptor instead.
 func (*ConnectResponse) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ConnectResponse) GetMessage() isConnectResponse_Message {
@@ -666,7 +747,7 @@ type Hello struct {
 
 func (x *Hello) Reset() {
 	*x = Hello{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +759,7 @@ func (x *Hello) String() string {
 func (*Hello) ProtoMessage() {}
 
 func (x *Hello) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +772,7 @@ func (x *Hello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hello.ProtoReflect.Descriptor instead.
 func (*Hello) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Hello) GetProtocolVersion() uint32 {
@@ -746,7 +827,7 @@ type Welcome struct {
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -758,7 +839,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -771,7 +852,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Welcome) GetProtocolVersion() uint32 {
@@ -799,7 +880,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +892,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +905,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Heartbeat) GetAtCapacity() bool {
@@ -855,7 +936,7 @@ type WorkOffer struct {
 
 func (x *WorkOffer) Reset() {
 	*x = WorkOffer{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +948,7 @@ func (x *WorkOffer) String() string {
 func (*WorkOffer) ProtoMessage() {}
 
 func (x *WorkOffer) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +961,7 @@ func (x *WorkOffer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkOffer.ProtoReflect.Descriptor instead.
 func (*WorkOffer) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WorkOffer) GetRunId() string {
@@ -920,7 +1001,7 @@ type LeaseClaim struct {
 
 func (x *LeaseClaim) Reset() {
 	*x = LeaseClaim{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -932,7 +1013,7 @@ func (x *LeaseClaim) String() string {
 func (*LeaseClaim) ProtoMessage() {}
 
 func (x *LeaseClaim) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -945,7 +1026,7 @@ func (x *LeaseClaim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseClaim.ProtoReflect.Descriptor instead.
 func (*LeaseClaim) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *LeaseClaim) GetWorkId() string {
@@ -967,7 +1048,7 @@ type LeaseResult struct {
 
 func (x *LeaseResult) Reset() {
 	*x = LeaseResult{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -979,7 +1060,7 @@ func (x *LeaseResult) String() string {
 func (*LeaseResult) ProtoMessage() {}
 
 func (x *LeaseResult) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -992,7 +1073,7 @@ func (x *LeaseResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseResult.ProtoReflect.Descriptor instead.
 func (*LeaseResult) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *LeaseResult) GetWorkId() string {
@@ -1026,7 +1107,7 @@ type Cancel struct {
 
 func (x *Cancel) Reset() {
 	*x = Cancel{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1038,7 +1119,7 @@ func (x *Cancel) String() string {
 func (*Cancel) ProtoMessage() {}
 
 func (x *Cancel) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1051,7 +1132,7 @@ func (x *Cancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cancel.ProtoReflect.Descriptor instead.
 func (*Cancel) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Cancel) GetWorkId() string {
@@ -1088,7 +1169,7 @@ type DeliveryUpdate struct {
 
 func (x *DeliveryUpdate) Reset() {
 	*x = DeliveryUpdate{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1100,7 +1181,7 @@ func (x *DeliveryUpdate) String() string {
 func (*DeliveryUpdate) ProtoMessage() {}
 
 func (x *DeliveryUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1113,7 +1194,7 @@ func (x *DeliveryUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliveryUpdate.ProtoReflect.Descriptor instead.
 func (*DeliveryUpdate) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeliveryUpdate) GetWorkId() string {
@@ -1177,7 +1258,7 @@ type RelayTicket struct {
 
 func (x *RelayTicket) Reset() {
 	*x = RelayTicket{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1189,7 +1270,7 @@ func (x *RelayTicket) String() string {
 func (*RelayTicket) ProtoMessage() {}
 
 func (x *RelayTicket) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1202,7 +1283,7 @@ func (x *RelayTicket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayTicket.ProtoReflect.Descriptor instead.
 func (*RelayTicket) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RelayTicket) GetDeliveryId() string {
@@ -1239,7 +1320,7 @@ type AuditBatch struct {
 
 func (x *AuditBatch) Reset() {
 	*x = AuditBatch{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1332,7 @@ func (x *AuditBatch) String() string {
 func (*AuditBatch) ProtoMessage() {}
 
 func (x *AuditBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1345,7 @@ func (x *AuditBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditBatch.ProtoReflect.Descriptor instead.
 func (*AuditBatch) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AuditBatch) GetFirstPosition() uint64 {
@@ -1304,7 +1385,7 @@ type AgentIdentityRequest struct {
 
 func (x *AgentIdentityRequest) Reset() {
 	*x = AgentIdentityRequest{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1316,7 +1397,7 @@ func (x *AgentIdentityRequest) String() string {
 func (*AgentIdentityRequest) ProtoMessage() {}
 
 func (x *AgentIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1329,7 +1410,7 @@ func (x *AgentIdentityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentIdentityRequest.ProtoReflect.Descriptor instead.
 func (*AgentIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AgentIdentityRequest) GetAgentId() string {
@@ -1348,7 +1429,7 @@ type AgentIdentity struct {
 
 func (x *AgentIdentity) Reset() {
 	*x = AgentIdentity{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1360,7 +1441,7 @@ func (x *AgentIdentity) String() string {
 func (*AgentIdentity) ProtoMessage() {}
 
 func (x *AgentIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1373,7 +1454,7 @@ func (x *AgentIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentIdentity.ProtoReflect.Descriptor instead.
 func (*AgentIdentity) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AgentIdentity) GetIdentityStatement() []byte {
@@ -1392,7 +1473,7 @@ type FlowVersion struct {
 
 func (x *FlowVersion) Reset() {
 	*x = FlowVersion{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1404,7 +1485,7 @@ func (x *FlowVersion) String() string {
 func (*FlowVersion) ProtoMessage() {}
 
 func (x *FlowVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1417,7 +1498,7 @@ func (x *FlowVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowVersion.ProtoReflect.Descriptor instead.
 func (*FlowVersion) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *FlowVersion) GetVersionStatement() []byte {
@@ -1436,7 +1517,7 @@ type Revocation struct {
 
 func (x *Revocation) Reset() {
 	*x = Revocation{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1448,7 +1529,7 @@ func (x *Revocation) String() string {
 func (*Revocation) ProtoMessage() {}
 
 func (x *Revocation) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1461,7 +1542,7 @@ func (x *Revocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Revocation.ProtoReflect.Descriptor instead.
 func (*Revocation) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Revocation) GetRevocationStatement() []byte {
@@ -1487,7 +1568,10 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\x0fproof_statement\x18\a \x01(\fR\x0eproofStatement\"b\n" +
 	"\x0eEnrollResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x125\n" +
-	"\x16connection_certificate\x18\x02 \x01(\fR\x15connectionCertificate\"J\n" +
+	"\x16connection_certificate\x18\x02 \x01(\fR\x15connectionCertificate\"\x14\n" +
+	"\x12GetIdentityRequest\"D\n" +
+	"\x13GetIdentityResponse\x12-\n" +
+	"\x12identity_statement\x18\x01 \x01(\fR\x11identityStatement\"J\n" +
 	"\x17RenewCertificateRequest\x12/\n" +
 	"\x13certificate_request\x18\x01 \x01(\fR\x12certificateRequest\"Q\n" +
 	"\x18RenewCertificateResponse\x125\n" +
@@ -1588,10 +1672,11 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\x19DELIVERY_STATE_RETRY_WAIT\x10\x05\x12\x19\n" +
 	"\x15DELIVERY_STATE_FAILED\x10\x062Z\n" +
 	"\x11EnrollmentService\x12E\n" +
-	"\x06Enroll\x12\x1c.mmft.agent.v1.EnrollRequest\x1a\x1d.mmft.agent.v1.EnrollResponse2\xc1\x01\n" +
+	"\x06Enroll\x12\x1c.mmft.agent.v1.EnrollRequest\x1a\x1d.mmft.agent.v1.EnrollResponse2\x97\x02\n" +
 	"\fAgentService\x12L\n" +
 	"\aConnect\x12\x1d.mmft.agent.v1.ConnectRequest\x1a\x1e.mmft.agent.v1.ConnectResponse(\x010\x01\x12c\n" +
-	"\x10RenewCertificate\x12&.mmft.agent.v1.RenewCertificateRequest\x1a'.mmft.agent.v1.RenewCertificateResponseB$Z\"mmft.dev/mmft/gen/agent/v1;agentv1b\x06proto3"
+	"\x10RenewCertificate\x12&.mmft.agent.v1.RenewCertificateRequest\x1a'.mmft.agent.v1.RenewCertificateResponse\x12T\n" +
+	"\vGetIdentity\x12!.mmft.agent.v1.GetIdentityRequest\x1a\".mmft.agent.v1.GetIdentityResponseB$Z\"mmft.dev/mmft/gen/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_mmft_agent_v1_agent_proto_rawDescOnce sync.Once
@@ -1606,56 +1691,60 @@ func file_mmft_agent_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_mmft_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_mmft_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_mmft_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_mmft_agent_v1_agent_proto_goTypes = []any{
 	(DeliveryState)(0),               // 0: mmft.agent.v1.DeliveryState
 	(*EnrollRequest)(nil),            // 1: mmft.agent.v1.EnrollRequest
 	(*EnrollResponse)(nil),           // 2: mmft.agent.v1.EnrollResponse
-	(*RenewCertificateRequest)(nil),  // 3: mmft.agent.v1.RenewCertificateRequest
-	(*RenewCertificateResponse)(nil), // 4: mmft.agent.v1.RenewCertificateResponse
-	(*ConnectRequest)(nil),           // 5: mmft.agent.v1.ConnectRequest
-	(*ConnectResponse)(nil),          // 6: mmft.agent.v1.ConnectResponse
-	(*Hello)(nil),                    // 7: mmft.agent.v1.Hello
-	(*Welcome)(nil),                  // 8: mmft.agent.v1.Welcome
-	(*Heartbeat)(nil),                // 9: mmft.agent.v1.Heartbeat
-	(*WorkOffer)(nil),                // 10: mmft.agent.v1.WorkOffer
-	(*LeaseClaim)(nil),               // 11: mmft.agent.v1.LeaseClaim
-	(*LeaseResult)(nil),              // 12: mmft.agent.v1.LeaseResult
-	(*Cancel)(nil),                   // 13: mmft.agent.v1.Cancel
-	(*DeliveryUpdate)(nil),           // 14: mmft.agent.v1.DeliveryUpdate
-	(*RelayTicket)(nil),              // 15: mmft.agent.v1.RelayTicket
-	(*AuditBatch)(nil),               // 16: mmft.agent.v1.AuditBatch
-	(*AgentIdentityRequest)(nil),     // 17: mmft.agent.v1.AgentIdentityRequest
-	(*AgentIdentity)(nil),            // 18: mmft.agent.v1.AgentIdentity
-	(*FlowVersion)(nil),              // 19: mmft.agent.v1.FlowVersion
-	(*Revocation)(nil),               // 20: mmft.agent.v1.Revocation
-	nil,                              // 21: mmft.agent.v1.Hello.FlowVersionsEntry
+	(*GetIdentityRequest)(nil),       // 3: mmft.agent.v1.GetIdentityRequest
+	(*GetIdentityResponse)(nil),      // 4: mmft.agent.v1.GetIdentityResponse
+	(*RenewCertificateRequest)(nil),  // 5: mmft.agent.v1.RenewCertificateRequest
+	(*RenewCertificateResponse)(nil), // 6: mmft.agent.v1.RenewCertificateResponse
+	(*ConnectRequest)(nil),           // 7: mmft.agent.v1.ConnectRequest
+	(*ConnectResponse)(nil),          // 8: mmft.agent.v1.ConnectResponse
+	(*Hello)(nil),                    // 9: mmft.agent.v1.Hello
+	(*Welcome)(nil),                  // 10: mmft.agent.v1.Welcome
+	(*Heartbeat)(nil),                // 11: mmft.agent.v1.Heartbeat
+	(*WorkOffer)(nil),                // 12: mmft.agent.v1.WorkOffer
+	(*LeaseClaim)(nil),               // 13: mmft.agent.v1.LeaseClaim
+	(*LeaseResult)(nil),              // 14: mmft.agent.v1.LeaseResult
+	(*Cancel)(nil),                   // 15: mmft.agent.v1.Cancel
+	(*DeliveryUpdate)(nil),           // 16: mmft.agent.v1.DeliveryUpdate
+	(*RelayTicket)(nil),              // 17: mmft.agent.v1.RelayTicket
+	(*AuditBatch)(nil),               // 18: mmft.agent.v1.AuditBatch
+	(*AgentIdentityRequest)(nil),     // 19: mmft.agent.v1.AgentIdentityRequest
+	(*AgentIdentity)(nil),            // 20: mmft.agent.v1.AgentIdentity
+	(*FlowVersion)(nil),              // 21: mmft.agent.v1.FlowVersion
+	(*Revocation)(nil),               // 22: mmft.agent.v1.Revocation
+	nil,                              // 23: mmft.agent.v1.Hello.FlowVersionsEntry
 }
 var file_mmft_agent_v1_agent_proto_depIdxs = []int32{
-	7,  // 0: mmft.agent.v1.ConnectRequest.hello:type_name -> mmft.agent.v1.Hello
-	9,  // 1: mmft.agent.v1.ConnectRequest.heartbeat:type_name -> mmft.agent.v1.Heartbeat
-	11, // 2: mmft.agent.v1.ConnectRequest.lease_claim:type_name -> mmft.agent.v1.LeaseClaim
-	14, // 3: mmft.agent.v1.ConnectRequest.delivery_update:type_name -> mmft.agent.v1.DeliveryUpdate
-	16, // 4: mmft.agent.v1.ConnectRequest.audit_batch:type_name -> mmft.agent.v1.AuditBatch
-	17, // 5: mmft.agent.v1.ConnectRequest.identity_request:type_name -> mmft.agent.v1.AgentIdentityRequest
-	8,  // 6: mmft.agent.v1.ConnectResponse.welcome:type_name -> mmft.agent.v1.Welcome
-	10, // 7: mmft.agent.v1.ConnectResponse.work_offer:type_name -> mmft.agent.v1.WorkOffer
-	12, // 8: mmft.agent.v1.ConnectResponse.lease_result:type_name -> mmft.agent.v1.LeaseResult
-	19, // 9: mmft.agent.v1.ConnectResponse.flow_version:type_name -> mmft.agent.v1.FlowVersion
-	18, // 10: mmft.agent.v1.ConnectResponse.agent_identity:type_name -> mmft.agent.v1.AgentIdentity
-	20, // 11: mmft.agent.v1.ConnectResponse.revocation:type_name -> mmft.agent.v1.Revocation
-	13, // 12: mmft.agent.v1.ConnectResponse.cancel:type_name -> mmft.agent.v1.Cancel
-	15, // 13: mmft.agent.v1.ConnectResponse.relay_ticket:type_name -> mmft.agent.v1.RelayTicket
-	21, // 14: mmft.agent.v1.Hello.flow_versions:type_name -> mmft.agent.v1.Hello.FlowVersionsEntry
+	9,  // 0: mmft.agent.v1.ConnectRequest.hello:type_name -> mmft.agent.v1.Hello
+	11, // 1: mmft.agent.v1.ConnectRequest.heartbeat:type_name -> mmft.agent.v1.Heartbeat
+	13, // 2: mmft.agent.v1.ConnectRequest.lease_claim:type_name -> mmft.agent.v1.LeaseClaim
+	16, // 3: mmft.agent.v1.ConnectRequest.delivery_update:type_name -> mmft.agent.v1.DeliveryUpdate
+	18, // 4: mmft.agent.v1.ConnectRequest.audit_batch:type_name -> mmft.agent.v1.AuditBatch
+	19, // 5: mmft.agent.v1.ConnectRequest.identity_request:type_name -> mmft.agent.v1.AgentIdentityRequest
+	10, // 6: mmft.agent.v1.ConnectResponse.welcome:type_name -> mmft.agent.v1.Welcome
+	12, // 7: mmft.agent.v1.ConnectResponse.work_offer:type_name -> mmft.agent.v1.WorkOffer
+	14, // 8: mmft.agent.v1.ConnectResponse.lease_result:type_name -> mmft.agent.v1.LeaseResult
+	21, // 9: mmft.agent.v1.ConnectResponse.flow_version:type_name -> mmft.agent.v1.FlowVersion
+	20, // 10: mmft.agent.v1.ConnectResponse.agent_identity:type_name -> mmft.agent.v1.AgentIdentity
+	22, // 11: mmft.agent.v1.ConnectResponse.revocation:type_name -> mmft.agent.v1.Revocation
+	15, // 12: mmft.agent.v1.ConnectResponse.cancel:type_name -> mmft.agent.v1.Cancel
+	17, // 13: mmft.agent.v1.ConnectResponse.relay_ticket:type_name -> mmft.agent.v1.RelayTicket
+	23, // 14: mmft.agent.v1.Hello.flow_versions:type_name -> mmft.agent.v1.Hello.FlowVersionsEntry
 	0,  // 15: mmft.agent.v1.DeliveryUpdate.state:type_name -> mmft.agent.v1.DeliveryState
 	1,  // 16: mmft.agent.v1.EnrollmentService.Enroll:input_type -> mmft.agent.v1.EnrollRequest
-	5,  // 17: mmft.agent.v1.AgentService.Connect:input_type -> mmft.agent.v1.ConnectRequest
-	3,  // 18: mmft.agent.v1.AgentService.RenewCertificate:input_type -> mmft.agent.v1.RenewCertificateRequest
-	2,  // 19: mmft.agent.v1.EnrollmentService.Enroll:output_type -> mmft.agent.v1.EnrollResponse
-	6,  // 20: mmft.agent.v1.AgentService.Connect:output_type -> mmft.agent.v1.ConnectResponse
-	4,  // 21: mmft.agent.v1.AgentService.RenewCertificate:output_type -> mmft.agent.v1.RenewCertificateResponse
-	19, // [19:22] is the sub-list for method output_type
-	16, // [16:19] is the sub-list for method input_type
+	7,  // 17: mmft.agent.v1.AgentService.Connect:input_type -> mmft.agent.v1.ConnectRequest
+	5,  // 18: mmft.agent.v1.AgentService.RenewCertificate:input_type -> mmft.agent.v1.RenewCertificateRequest
+	3,  // 19: mmft.agent.v1.AgentService.GetIdentity:input_type -> mmft.agent.v1.GetIdentityRequest
+	2,  // 20: mmft.agent.v1.EnrollmentService.Enroll:output_type -> mmft.agent.v1.EnrollResponse
+	8,  // 21: mmft.agent.v1.AgentService.Connect:output_type -> mmft.agent.v1.ConnectResponse
+	6,  // 22: mmft.agent.v1.AgentService.RenewCertificate:output_type -> mmft.agent.v1.RenewCertificateResponse
+	4,  // 23: mmft.agent.v1.AgentService.GetIdentity:output_type -> mmft.agent.v1.GetIdentityResponse
+	20, // [20:24] is the sub-list for method output_type
+	16, // [16:20] is the sub-list for method input_type
 	16, // [16:16] is the sub-list for extension type_name
 	16, // [16:16] is the sub-list for extension extendee
 	0,  // [0:16] is the sub-list for field type_name
@@ -1666,7 +1755,7 @@ func file_mmft_agent_v1_agent_proto_init() {
 	if File_mmft_agent_v1_agent_proto != nil {
 		return
 	}
-	file_mmft_agent_v1_agent_proto_msgTypes[4].OneofWrappers = []any{
+	file_mmft_agent_v1_agent_proto_msgTypes[6].OneofWrappers = []any{
 		(*ConnectRequest_Hello)(nil),
 		(*ConnectRequest_Heartbeat)(nil),
 		(*ConnectRequest_LeaseClaim)(nil),
@@ -1674,7 +1763,7 @@ func file_mmft_agent_v1_agent_proto_init() {
 		(*ConnectRequest_AuditBatch)(nil),
 		(*ConnectRequest_IdentityRequest)(nil),
 	}
-	file_mmft_agent_v1_agent_proto_msgTypes[5].OneofWrappers = []any{
+	file_mmft_agent_v1_agent_proto_msgTypes[7].OneofWrappers = []any{
 		(*ConnectResponse_Welcome)(nil),
 		(*ConnectResponse_WorkOffer)(nil),
 		(*ConnectResponse_LeaseResult)(nil),
@@ -1690,7 +1779,7 @@ func file_mmft_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mmft_agent_v1_agent_proto_rawDesc), len(file_mmft_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -75,7 +75,7 @@ func New(cfg Config) (*Server, error) {
 		grpc.StreamInterceptor(s.streamAuth),
 	)
 	agentv1.RegisterEnrollmentServiceServer(s.grpc, enrollment{s: s})
-	agentv1.RegisterAgentServiceServer(s.grpc, agentv1.UnimplementedAgentServiceServer{})
+	agentv1.RegisterAgentServiceServer(s.grpc, agentService{s: s})
 	return s, nil
 }
 
@@ -169,6 +169,8 @@ func (s *Server) API() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
 	})
 	mux.Handle("POST /api/v1/agents/enrollment-tokens", s.requireAdmin(http.HandlerFunc(s.createToken)))
+	mux.Handle("GET /api/v1/agents", s.requireAdmin(http.HandlerFunc(s.listAgents)))
+	mux.Handle("PUT /api/v1/agents/{agent_id}/identity", s.requireAdmin(http.HandlerFunc(s.putIdentity)))
 	mux.Handle("/api/v1/", s.requireAdmin(http.NotFoundHandler()))
 	return mux
 }
