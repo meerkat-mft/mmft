@@ -201,9 +201,22 @@ func TestStoredIdentityApprovesTheAgent(t *testing.T) {
 		t.Fatalf("approved = %+v", page)
 	}
 
-	// The same statement again is a safe repeat, and a different one is refused.
+	// The same statement again is a safe repeat, even with its signatures
+	// reordered and its JSON reformatted, and a different one is refused.
 	if code, _ := h.do(t, http.MethodPut, path, identity); code != http.StatusNoContent {
 		t.Fatalf("repeat: %d", code)
+	}
+	var e statement.Envelope
+	if err := json.Unmarshal(identity, &e); err != nil {
+		t.Fatal(err)
+	}
+	e.Signatures[0], e.Signatures[1] = e.Signatures[1], e.Signatures[0]
+	reordered, _ := json.MarshalIndent(e, "", "  ")
+	if code, data := h.do(t, http.MethodPut, path, reordered); code != http.StatusNoContent {
+		t.Fatalf("reordered repeat: %d %s", code, data)
+	}
+	if got, err := h.getIdentity(t, a); err != nil || !bytes.Equal(got, identity) {
+		t.Fatalf("stored bytes changed: %v", err)
 	}
 	if code, _ := h.do(t, http.MethodPut, path, ap.sign(t, a.id, "lab", "agent-a", a.keys)); code != http.StatusConflict {
 		t.Fatalf("second identity: %d", code)

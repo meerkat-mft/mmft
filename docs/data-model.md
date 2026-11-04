@@ -36,7 +36,7 @@ Every delivery belongs to a run, including a manual one. Flows arrive in M2, whe
 
 ## Signed statements
 
-A statement's ID is the SHA-256 of its exact stored bytes, so the same statement is stored once. Approving an agent stores its identity statement, links it from the agent's active `agent_identities` row with its expiry, and sets the agent to `approved`. That row's statement is set once. Renewal arrives with `mmft agent renew`.
+A statement's ID is the `Verified.ID` from `internal/statement`, which covers its type and payload but not its signatures, as ADR 0015 requires. The same statement is stored once, even when resent with its signatures reordered or its JSON reformatted, and the envelope keeps the exact bytes first received. Approving an agent stores its identity statement, links it from the agent's active `agent_identities` row with its expiry, and sets the agent to `approved`. That row's statement is set once. Renewal arrives with `mmft agent renew`.
 
 ## Personal data and evidence
 

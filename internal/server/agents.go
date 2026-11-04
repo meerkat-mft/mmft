@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -139,9 +141,14 @@ func (s *Server) putIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.cfg.Now()
-	claim, err := trust.CheckIdentity(body, now)
+	claim, statementID, err := trust.CheckIdentity(body, now)
 	if err != nil {
 		problem(w, http.StatusBadRequest, "The identity statement is invalid.")
+		return
+	}
+	id, err := hex.DecodeString(statementID)
+	if err != nil || len(id) != sha256.Size {
+		problem(w, http.StatusInternalServerError, "Could not store the identity.")
 		return
 	}
 	if claim.AgentID != agentID {
@@ -149,7 +156,7 @@ func (s *Server) putIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = pgx.BeginFunc(r.Context(), s.cfg.DB, func(tx pgx.Tx) error {
-		return storeIdentity(r.Context(), tx, claim, body)
+		return storeIdentity(r.Context(), tx, claim, id, body)
 	})
 	var apiErr apiError
 	switch {
@@ -162,7 +169,10 @@ func (s *Server) putIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func storeIdentity(ctx context.Context, tx pgx.Tx, claim trust.IdentityClaim, envelope []byte) error {
+// storeIdentity keeps the envelope's exact bytes under the statement's ID, which
+// doesn't depend on its signatures, so a resent copy with its signatures
+// reordered or reformatted is the same statement.
+func storeIdentity(ctx context.Context, tx pgx.Tx, claim trust.IdentityClaim, id, envelope []byte) error {
 	var agentStatus, workspace, name string
 	err := tx.QueryRow(ctx, `
 		SELECT a.status, w.name, a.name FROM agents a JOIN workspaces w ON w.id = a.workspace_id
@@ -196,22 +206,20 @@ func storeIdentity(ctx context.Context, tx pgx.Tx, claim trust.IdentityClaim, en
 	if (trust.AgentKeys{Ed25519: ed, MLDSA65: ml, Recipient: recipient}).Fingerprint() != claim.Keys().Fingerprint() {
 		return errIdentityMismatch
 	}
-	// A statement is identified by the SHA-256 of its exact bytes.
-	sum := sha256.Sum256(envelope)
 	if current != nil {
-		if string(current) == string(sum[:]) {
+		if bytes.Equal(current, id) {
 			return nil
 		}
 		return errHasIdentity
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO signed_statements (id, payload_type, envelope) VALUES ($1, $2, $3)
-		ON CONFLICT (id) DO NOTHING`, sum[:], string(statement.TypeAgentIdentity), envelope); err != nil {
+		ON CONFLICT (id) DO NOTHING`, id, string(statement.TypeAgentIdentity), envelope); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE agent_identities SET identity_statement_id = $2, not_after = $3 WHERE id = $1`,
-		identityID, sum[:], claim.NotAfter); err != nil {
+		identityID, id, claim.NotAfter); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE agents SET status = 'approved' WHERE id = $1`, claim.AgentID)

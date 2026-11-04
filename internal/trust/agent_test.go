@@ -302,26 +302,35 @@ func TestVerifyAgentRejects(t *testing.T) {
 func TestCheckIdentity(t *testing.T) {
 	l, a := setup(t), newAgent(t)
 	good := identity(t, l, request(a))
-	claim, err := CheckIdentity(good, now)
+	claim, id, err := CheckIdentity(good, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(id) != 64 {
+		t.Fatalf("id = %q", id)
 	}
 	if claim.AgentID != testAgentID || claim.Keys().Fingerprint() != a.keys.Fingerprint() {
 		t.Fatalf("claim = %+v", claim)
 	}
-	if _, err := CheckIdentity(good, now.Add(valid)); !errors.Is(err, ErrExpired) {
+	if _, _, err := CheckIdentity(good, now.Add(valid)); !errors.Is(err, ErrExpired) {
 		t.Errorf("expired: err = %v", err)
 	}
-	if _, err := CheckIdentity([]byte(`{}`), now); !errors.Is(err, ErrInvalidIdentity) {
+	if _, _, err := CheckIdentity([]byte(`{}`), now); !errors.Is(err, ErrInvalidIdentity) {
 		t.Errorf("not an envelope: err = %v", err)
 	}
 	var e statement.Envelope
 	if err := json.Unmarshal(good, &e); err != nil {
 		t.Fatal(err)
 	}
+	// Reordered signatures and other formatting give the same ID.
+	e.Signatures[0], e.Signatures[1] = e.Signatures[1], e.Signatures[0]
+	reordered, _ := json.MarshalIndent(e, "", "  ")
+	if _, again, err := CheckIdentity(reordered, now); err != nil || again != id {
+		t.Errorf("reordered: id = %q, %v; want %q", again, err, id)
+	}
 	e.Signatures = e.Signatures[:1]
 	half, _ := json.Marshal(e)
-	if _, err := CheckIdentity(half, now); err == nil {
+	if _, _, err := CheckIdentity(half, now); err == nil {
 		t.Error("an identity with one signature was accepted")
 	}
 }
