@@ -1,3 +1,8 @@
+//go:build !windows
+
+// These tests store private keys, which Windows refuses until its access
+// control lists are checked. See perm_windows.go.
+
 package trust
 
 import (
@@ -7,7 +12,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -402,9 +406,6 @@ func TestKeyFilesUseTheProductionWorkFactor(t *testing.T) {
 }
 
 func TestKeyFilePermissions(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX modes")
-	}
 	dir := filepath.Join(t.TempDir(), "new")
 	if _, err := InitRoot(dir, pass); err != nil {
 		t.Fatal(err)
@@ -428,9 +429,6 @@ func TestKeyFilePermissions(t *testing.T) {
 }
 
 func TestPublicFilesAreReadable(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX modes")
-	}
 	dir := t.TempDir()
 	if _, err := InitRoot(dir, pass); err != nil {
 		t.Fatal(err)
@@ -445,9 +443,6 @@ func TestPublicFilesAreReadable(t *testing.T) {
 }
 
 func TestUnsafeLocationsAreRefused(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX modes")
-	}
 	for _, mode := range []os.FileMode{0o777, 0o770, 0o707} {
 		dir := t.TempDir()
 		if err := os.Chmod(dir, mode); err != nil {
@@ -486,9 +481,6 @@ func TestUnsafeLocationsAreRefused(t *testing.T) {
 }
 
 func TestDanglingSymlinkIsNotFollowed(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks need privileges")
-	}
 	dir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "stolen")
 	if err := os.Symlink(outside, filepath.Join(dir, RootKeyFile)); err != nil {
@@ -574,14 +566,12 @@ func TestReadPassphrase(t *testing.T) {
 	if got != pass+" " {
 		t.Fatalf("passphrase = %q", got)
 	}
-	if runtime.GOOS != "windows" {
-		for _, mode := range []os.FileMode{0o640, 0o604, 0o644} {
-			if err := os.Chmod(path, mode); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := ReadPassphrase(path); !errors.Is(err, ErrNotPrivate) {
-				t.Errorf("mode %o: %v", mode, err)
-			}
+	for _, mode := range []os.FileMode{0o640, 0o604, 0o644} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadPassphrase(path); !errors.Is(err, ErrNotPrivate) {
+			t.Errorf("mode %o: %v", mode, err)
 		}
 	}
 	if _, err := ReadPassphrase(dir); err == nil {
