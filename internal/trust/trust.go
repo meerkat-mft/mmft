@@ -101,10 +101,10 @@ func publicRecord(s *statement.Signer, owner string) PublicRecord {
 	return PublicRecord{Version: formatVersion, Owner: owner, Ed25519: ed, MLDSA65: ml}
 }
 
-// writeNew creates a file that must not already exist. It writes to a temporary
+// WriteNew creates a file that must not already exist. It writes to a temporary
 // name, syncs, and then links into place, so a crash can't leave a truncated key
 // and a key can't be lost after success is reported.
-func writeNew(path string, data []byte, mode os.FileMode) (err error) {
+func WriteNew(path string, data []byte, mode os.FileMode) (err error) {
 	path = filepath.Clean(path)
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".tmp-*")
@@ -164,7 +164,7 @@ func saveKey(path string, s *statement.Signer, owner, passphrase string) error {
 	if err := w.Close(); err != nil {
 		return err
 	}
-	return writeNew(path, sealed.Bytes(), 0o600)
+	return WriteNew(path, sealed.Bytes(), 0o600)
 }
 
 // CheckPassphrase rejects a passphrase too weak for a new key.
@@ -249,9 +249,26 @@ func LoadKey(path, passphrase string, role statement.Role) (*statement.Signer, s
 	return s, k.Owner, nil
 }
 
-// prepareDir creates a private key directory, or accepts an existing one only if
+// ReadPrivate reads a file only if it is private to this user.
+func ReadPrivate(path string) ([]byte, error) {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPrivateFile(info); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(f)
+}
+
+// PrepareDir creates a private directory, or accepts an existing one only if
 // it is a real directory that nobody else can change.
-func prepareDir(dir string) error {
+func PrepareDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -272,7 +289,7 @@ func create(dir, keyName, pubName, owner, passphrase string, role statement.Role
 	if err := CheckPassphrase(passphrase); err != nil {
 		return statement.PublicKey{}, err
 	}
-	if err := prepareDir(dir); err != nil {
+	if err := PrepareDir(dir); err != nil {
 		return statement.PublicKey{}, err
 	}
 	keyPath, pubPath := filepath.Join(dir, keyName), filepath.Join(dir, pubName)
@@ -287,7 +304,7 @@ func create(dir, keyName, pubName, owner, passphrase string, role statement.Role
 	if err != nil {
 		return statement.PublicKey{}, err
 	}
-	if err := writeNew(pubPath, append(pub, '\n'), 0o644); err != nil {
+	if err := WriteNew(pubPath, append(pub, '\n'), 0o644); err != nil {
 		return statement.PublicKey{}, err
 	}
 	if err := saveKey(keyPath, s, owner, passphrase); err != nil {
@@ -482,5 +499,5 @@ func WriteCertificate(path string, e *statement.Envelope) error {
 	if err != nil {
 		return err
 	}
-	return writeNew(path, append(data, '\n'), 0o644)
+	return WriteNew(path, append(data, '\n'), 0o644)
 }

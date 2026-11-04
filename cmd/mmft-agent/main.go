@@ -1,12 +1,202 @@
-// Command mmft-agent is a placeholder until its milestone begins.
+// Command mmft-agent is the Meerkat MFT agent. Every command runs without prompts
+// and has stable exit codes, so deployment tools can run it. Output is JSON,
+// except version and the default fingerprint output, which are plain text for a
+// person comparing fingerprints on the host.
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"mmft.dev/mmft/internal/agent"
 	"mmft.dev/mmft/internal/version"
 )
 
+// Exit codes. Scripts can treat exitExists as a safe repeat run.
+const (
+	exitOK      = 0
+	exitFailure = 1
+	exitUsage   = 2
+	exitExists  = 3
+	// exitRefused means the orchestrator refused the enrollment token.
+	exitRefused = 4
+)
+
+const (
+	defaultDir    = "/var/lib/mmft/agent"
+	enrollTimeout = 30 * time.Second
+	maxTokenBytes = 256
+)
+
+const usage = `usage:
+  mmft-agent version
+  mmft-agent install --orchestrator HOST:PORT --name NAME --token-file FILE
+                     --ca-fingerprint HEX --root-fingerprint HEX [--dir DIR]
+  mmft-agent fingerprint [--dir DIR] [--json]
+`
+
+var errUsage = errors.New("incorrect usage")
+
 func main() {
-	fmt.Println(version.String("mmft-agent"))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, time.Now))
+}
+
+func run(args []string, stdout, stderr io.Writer, now func() time.Time) int {
+	err := dispatch(args, stdout, stderr, now)
+	switch {
+	case err == nil:
+		return exitOK
+	case errors.Is(err, errUsage):
+		_, _ = io.WriteString(stderr, usage)
+		return exitUsage
+	case errors.Is(err, os.ErrExist):
+		_ = output(stderr, map[string]string{"error": "already enrolled"})
+		return exitExists
+	case status.Code(err) == codes.PermissionDenied:
+		_ = output(stderr, map[string]string{"error": "the orchestrator refused the enrollment token"})
+		return exitRefused
+	default:
+		_ = output(stderr, map[string]string{"error": err.Error()})
+		return exitFailure
+	}
+}
+
+func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	rest := args[1:]
+	switch args[0] {
+	case "version":
+		if len(rest) != 0 {
+			return errUsage
+		}
+		_, err := fmt.Fprintln(stdout, version.String("mmft-agent"))
+		return err
+	case "install":
+		return install(rest, stdout, stderr, now)
+	case "fingerprint":
+		return fingerprint(rest, stdout, stderr)
+	default:
+		return errUsage
+	}
+}
+
+// parse reads flags and rejects missing required ones and stray arguments.
+func parse(fs *flag.FlagSet, args []string, stderr io.Writer, required ...string) error {
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return errUsage
+	}
+	if fs.NArg() != 0 {
+		return errUsage
+	}
+	for _, name := range required {
+		if fs.Lookup(name).Value.String() == "" {
+			return errUsage
+		}
+	}
+	return nil
+}
+
+func output(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// readToken reads the token from a file, so it never appears in a process list.
+func readToken(path string) (string, error) {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxTokenBytes+1))
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" || len(data) > maxTokenBytes {
+		return "", errors.New("the token file must hold one token")
+	}
+	return token, nil
+}
+
+func stateJSON(s agent.State) map[string]string {
+	return map[string]string{
+		"agent_id":    s.AgentID,
+		"agent_name":  s.AgentName,
+		"fingerprint": s.Fingerprint(),
+	}
+}
+
+func install(args []string, stdout, stderr io.Writer, now func() time.Time) error {
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	dir := fs.String("dir", defaultDir, "directory for the agent's keys and state")
+	orchestrator := fs.String("orchestrator", "", "host and port of the orchestrator's agent service")
+	name := fs.String("name", "", "agent name the token was created for")
+	tokenFile := fs.String("token-file", "", "file holding the enrollment token")
+	caPin := fs.String("ca-fingerprint", "", "connection CA fingerprint from the install command")
+	rootPin := fs.String("root-fingerprint", "", "trust root fingerprint from the install command")
+	if err := parse(fs, args, stderr, "orchestrator", "name", "token-file", "ca-fingerprint", "root-fingerprint"); err != nil {
+		return err
+	}
+	// A repeat run reports the saved agent before it needs the token, which a
+	// deployment tool may have removed after the first run.
+	if s, err := agent.ReadState(*dir); err == nil {
+		_ = output(stdout, stateJSON(s))
+		return os.ErrExist
+	}
+	token, err := readToken(*tokenFile)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), enrollTimeout)
+	defer cancel()
+	s, err := agent.Enroll(ctx, *dir, agent.Install{
+		Orchestrator:    *orchestrator,
+		Token:           token,
+		AgentName:       *name,
+		CAFingerprint:   *caPin,
+		RootFingerprint: *rootPin,
+	}, now)
+	if errors.Is(err, os.ErrExist) {
+		// Print the existing agent too, so a repeat run still reports it.
+		_ = output(stdout, stateJSON(s))
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	return output(stdout, stateJSON(s))
+}
+
+func fingerprint(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("fingerprint", flag.ContinueOnError)
+	dir := fs.String("dir", defaultDir, "directory for the agent's keys and state")
+	asJSON := fs.Bool("json", false, "print JSON for a deployment tool")
+	if err := parse(fs, args, stderr); err != nil {
+		return err
+	}
+	s, err := agent.ReadState(*dir)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return output(stdout, stateJSON(s))
+	}
+	_, err = fmt.Fprintf(stdout, "agent_id     %s\nagent_name   %s\nfingerprint  %s\n", s.AgentID, s.AgentName, s.Fingerprint())
+	return err
 }
