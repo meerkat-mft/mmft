@@ -299,3 +299,31 @@ func TestRevokedAgentGetsNoIdentity(t *testing.T) {
 		t.Fatalf("code = %d", code)
 	}
 }
+
+func TestGetAgentMatchesTheListing(t *testing.T) {
+	h := start(t)
+	a := h.enrollAgent(t, "lab", "agent-a")
+	code, data := h.do(t, http.MethodGet, "/api/v1/agents/"+a.id, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get: %d %s", code, data)
+	}
+	var got agentItem
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	listed := h.list(t, "").Items[0]
+	if got.ID != listed.ID || got.Name != "agent-a" || got.Workspace != "lab" || got.Status != "pending_approval" ||
+		got.PublicKeys == nil || listed.PublicKeys == nil || !bytes.Equal(got.PublicKeys.MLDSA65, listed.PublicKeys.MLDSA65) {
+		t.Fatalf("get %+v, listed %+v", got, listed)
+	}
+	for _, path := range []string{"/api/v1/agents/" + a.keys.AgentID()[:8], "/api/v1/agents/019a3f2e-7c11-7d3e-9f7b-000000000000", "/api/v1/nothing-here"} {
+		code, data := h.do(t, http.MethodGet, path, nil)
+		var p struct {
+			Title  string `json:"title"`
+			Status int    `json:"status"`
+		}
+		if code != http.StatusNotFound || json.Unmarshal(data, &p) != nil || p.Status != http.StatusNotFound || p.Title == "" {
+			t.Errorf("%s: %d %s", path, code, data)
+		}
+	}
+}

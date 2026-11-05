@@ -51,6 +51,17 @@ mmft agent enroll
 mmft audit verify
 ```
 
+Both `mmft` and `mmft-agent` use the same exit codes, so a deployment tool can act on them without parsing output:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Done |
+| 1 | Failed. The JSON error on stderr says why. |
+| 2 | Incorrect usage. Usage text, not JSON, is on stderr. |
+| 3 | Safe repeat: the thing already exists exactly as asked, and nothing changed |
+| 4 | Refused by a trust check: the orchestrator refused an enrollment token, or `mmft agent approve` refused an agent that doesn't match its host |
+| 5 | Waiting: `mmft-agent identity` found no approved identity yet |
+
 ## Commit scopes
 
 Conventional Commits titles use one of these scopes, or none for a change across the whole repo.
