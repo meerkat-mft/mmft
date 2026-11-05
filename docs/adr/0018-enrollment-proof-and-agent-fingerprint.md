@@ -1,6 +1,6 @@
 # 0018. Enrollment proof, agent fingerprints, and identity chains
 
-Status: Accepted
+Status: Superseded by 0019
 Date: 2026-11-03
 
 Refines [ADR 0011](0011-trust-root-and-key-hierarchy.md) and [ADR 0017](0017-connection-ca-and-bootstrap-access.md).

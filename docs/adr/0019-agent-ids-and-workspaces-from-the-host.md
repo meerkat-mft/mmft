@@ -1,6 +1,6 @@
 # 0019. Agent IDs and workspaces come from the host
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-05
 
 Supersedes [ADR 0018](0018-enrollment-proof-and-agent-fingerprint.md).
