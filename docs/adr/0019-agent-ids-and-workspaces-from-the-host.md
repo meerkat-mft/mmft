@@ -35,9 +35,11 @@ ADR 0018's decisions stay, with these changes.
 - **Random agent IDs chosen by the host:** the orchestrator can't choose them, but a compromised host can claim an existing agent's ID. Only a record of every signed ID would catch that, and a deployment pipeline has nowhere reliable to keep one.
 - **A record of signed IDs on the administrator's machine:** it catches duplicates only for one approver on one machine. Automation keys and several administrators would each need the same shared record.
 - **Leaving the ID to the orchestrator, and having senders check fingerprints:** every sender would need a fingerprint from outside the orchestrator for every destination, which is the problem identities exist to solve.
-- **Hashing the full fingerprint into the ID:** the same strength, but agent IDs then stop being UUIDs, which the schema, the connection certificates, and the API all use.
+- **Using the full fingerprint as the ID:** stronger, with 128-bit collision resistance and 256-bit second-preimage resistance. But agent IDs would stop being UUIDs, which the schema, the connection certificates, and the API all use.
 
 ## Consequences
+
+Keeping 122 bits of the fingerprint costs strength. Taking another agent's ID means finding keys whose fingerprint starts with that agent's 122 bits, a second preimage, at about 2^122 work. That's the attack this ADR closes, and it stays out of reach. Making any two key sets share an ID is a collision, at about 2^61 hash work, and every attempt also costs a key generation. An attacker who managed it would hold both key sets, so it would harm no other agent. Each identity also records the full fingerprint, which still tells the two apart in audit evidence. If a collision ever becomes a practical concern, the ID scheme can move to the full fingerprint in a new ADR.
 
 The orchestrator can no longer choose any value an administrator signs. A compromised orchestrator can still withhold or delay approvals, as before.
 
