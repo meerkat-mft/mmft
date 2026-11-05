@@ -180,7 +180,7 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 	case err == nil:
 		_ = output(stdout, stateJSON(s))
 		return agent.ErrAlreadyEnrolled
-	case errors.Is(err, agent.ErrCertificateExpired), errors.Is(err, agent.ErrNotEnrolled):
+	case errors.Is(err, agent.ErrCertificateExpired), errors.Is(err, agent.ErrMissingCA), errors.Is(err, agent.ErrNotEnrolled):
 		// Enroll, or re-enroll with the same keys, using the token.
 	default:
 		return err

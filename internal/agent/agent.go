@@ -62,6 +62,9 @@ var (
 	ErrSaveFailed         = errors.New("agent: saving the enrollment failed")
 	ErrOtherSettings      = errors.New("agent: already enrolled with other settings")
 	ErrCertificateExpired = errors.New("agent: the connection certificate has expired, so create a new token with `mmft agent token` and run install again")
+	// ErrMissingCA means the agent was enrolled before the CA certificate was
+	// saved. A new token re-enrolls it with its own keys and saves the CA.
+	ErrMissingCA = errors.New("agent: no CA certificate is saved from enrollment, so create a new token with `mmft agent token` and run install again")
 	// ErrAlreadyEnrolled is returned only with a valid saved state.
 	ErrAlreadyEnrolled = errors.New("agent: already enrolled")
 )
@@ -276,7 +279,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	switch {
 	case err == nil:
 		return saved, ErrAlreadyEnrolled
-	case errors.Is(err, ErrCertificateExpired):
+	case errors.Is(err, ErrCertificateExpired), errors.Is(err, ErrMissingCA):
 	case errors.Is(err, ErrNotEnrolled):
 		saved = State{}
 	default:
@@ -387,7 +390,8 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 // CheckInstalled checks an enrolled agent in dir: its saved settings must match
 // in, apart from the token, its key file and connection certificate must load
 // and belong to it, and the certificate must not have expired. It returns
-// ErrNotEnrolled, ErrOtherSettings, ErrDamaged, or ErrCertificateExpired.
+// ErrNotEnrolled, ErrOtherSettings, ErrDamaged, ErrCertificateExpired, or
+// ErrMissingCA. The last two are fixed by installing again with a new token.
 func CheckInstalled(dir string, in Install, now time.Time) (State, error) {
 	s, err := ReadState(dir)
 	if err != nil {
@@ -404,12 +408,8 @@ func CheckInstalled(dir string, in Install, now time.Time) (State, error) {
 	if keys.Public().Fingerprint() != s.Fingerprint() {
 		return s, ErrDamaged
 	}
-	cert, err := loadCertificate(dir, s, keys)
-	if err != nil {
+	if _, err := loadCertificate(dir, s, keys, now); err != nil {
 		return s, err
-	}
-	if !now.Before(cert.NotAfter) {
-		return s, ErrCertificateExpired
 	}
 	return s, nil
 }
@@ -432,10 +432,15 @@ func readCertificate(path string) (*x509.Certificate, error) {
 }
 
 // loadCertificate reads the connection certificate and requires it to hold
-// the agent's connection key, name its ID, and carry a valid signature from
-// the CA pinned at enrollment.
-func loadCertificate(dir string, s State, keys *Keys) (*x509.Certificate, error) {
+// the agent's connection key, name its ID, and chain to the CA pinned at
+// enrollment for client use at now, exactly as the server's TLS check does. A
+// certificate that has only expired returns ErrCertificateExpired, which a new
+// token fixes. Anything else wrong is damage.
+func loadCertificate(dir string, s State, keys *Keys, now time.Time) (*x509.Certificate, error) {
 	ca, err := readCertificate(filepath.Join(dir, CAFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrMissingCA
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -455,6 +460,18 @@ func loadCertificate(dir string, s State, keys *Keys) (*x509.Certificate, error)
 	}
 	if id, err := connca.AgentID(cert); err != nil || id != s.AgentID {
 		return nil, ErrDamaged
+	}
+	if !now.Before(cert.NotAfter) {
+		return nil, ErrCertificateExpired
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := cert.Verify(x509.VerifyOptions{
+		Roots:       roots,
+		CurrentTime: now,
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDamaged, err)
 	}
 	return cert, nil
 }
@@ -510,14 +527,11 @@ func FetchIdentity(ctx context.Context, dir string, now func() time.Time) (trust
 	if err != nil {
 		return trust.IdentityClaim{}, err
 	}
-	cert, err := loadCertificate(dir, s, keys)
+	// A certificate TLS would refuse fails the handshake with an unclear
+	// error, so check it first and say what to do instead.
+	cert, err := loadCertificate(dir, s, keys, now())
 	if err != nil {
 		return trust.IdentityClaim{}, err
-	}
-	// An expired certificate fails the TLS handshake with an unclear error, so
-	// say what to do instead.
-	if !now().Before(cert.NotAfter) {
-		return trust.IdentityClaim{}, ErrCertificateExpired
 	}
 	host, err := checkSettings(s.Orchestrator, s.AgentName, s.CAFingerprint, s.RootFingerprint)
 	if err != nil {

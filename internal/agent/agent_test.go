@@ -700,15 +700,47 @@ func TestRepeatInstallChecksTheCertificateSignature(t *testing.T) {
 	if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrDamaged) {
 		t.Fatalf("another CA: %v", err)
 	}
-	if err := os.Remove(caPath); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrDamaged) {
-		t.Fatalf("missing CA: %v", err)
-	}
 	write(caPath, caPEM)
 	if _, err := CheckInstalled(dir, good, time.Now()); err != nil {
 		t.Fatalf("restored: %v", err)
+	}
+	// TLS also refuses a certificate that isn't valid yet, so this is no safe
+	// repeat either.
+	if _, err := CheckInstalled(dir, good, time.Now().Add(-time.Hour)); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("certificate not valid yet: %v", err)
+	}
+}
+
+// An agent enrolled before the CA was saved has no ca.crt. A new token
+// re-enrolls it with its own keys and saves the CA.
+func TestEnrollmentWithoutASavedCARecovers(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	first, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, CAFile)); err != nil {
+		t.Fatal(err)
+	}
+	good := install(o, "", "agent-a")
+	if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrMissingCA) {
+		t.Fatalf("older enrollment: %v", err)
+	}
+	if _, err := FetchIdentity(context.Background(), dir, time.Now); !errors.Is(err, ErrMissingCA) {
+		t.Fatalf("identity: %v", err)
+	}
+	keysBefore, _ := os.ReadFile(filepath.Join(dir, KeyFile))
+	again, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a"))
+	if err != nil {
+		t.Fatalf("re-enrollment: %v", err)
+	}
+	keysAfter, _ := os.ReadFile(filepath.Join(dir, KeyFile))
+	if again.AgentID != first.AgentID || !bytes.Equal(keysBefore, keysAfter) {
+		t.Fatal("re-enrollment changed the agent or its keys")
+	}
+	if _, err := CheckInstalled(dir, good, time.Now()); err != nil {
+		t.Fatalf("after re-enrollment: %v", err)
 	}
 }
 
