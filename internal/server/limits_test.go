@@ -205,21 +205,68 @@ func TestAPIClosesAnIdleConnection(t *testing.T) {
 	}
 }
 
+// TestListenersCapConnections checks each listener on its own: the cap is
+// applied per listener, so one could be left unbounded while the other holds.
 func TestListenersCapConnections(t *testing.T) {
 	l := fastLimits()
 	l.maxConnections = 1
 	h := startWithLimits(t, l)
-	first := h.tlsDial(t, h.apiAddr)
+	for _, tc := range []struct {
+		name, addr string
+		protos     []string
+	}{
+		{"api", h.apiAddr, nil},
+		{"grpc", h.grpcAddr, []string{"h2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first := h.tlsDial(t, tc.addr, tc.protos...)
 
-	d := &tls.Dialer{Config: &tls.Config{RootCAs: h.pool, ServerName: "orchestrator.test", MinVersion: tls.VersionTLS13}}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	if c, err := d.DialContext(ctx, "tcp", h.apiAddr); err == nil {
-		_ = c.Close()
-		t.Fatal("a second connection was accepted past the cap")
+			d := &tls.Dialer{Config: &tls.Config{RootCAs: h.pool, ServerName: "orchestrator.test", MinVersion: tls.VersionTLS13, NextProtos: tc.protos}}
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+			if c, err := d.DialContext(ctx, "tcp", tc.addr); err == nil {
+				_ = c.Close()
+				t.Fatal("a second connection was accepted past the cap")
+			}
+			_ = first.Close()
+			h.tlsDial(t, tc.addr, tc.protos...)
+		})
 	}
-	_ = first.Close()
-	h.tlsDial(t, h.apiAddr)
+}
+
+// TestGRPCClosesAnIdleConnection: a connection with no stream open is closed
+// at the idle limit, long before the connection age.
+func TestGRPCClosesAnIdleConnection(t *testing.T) {
+	l := fastLimits()
+	l.connectionIdle = 200 * time.Millisecond
+	h := startWithLimits(t, l)
+	c := h.tlsDial(t, h.grpcAddr, "h2")
+	fr, _ := openHeaderOnlyStreams(t, c)
+	var goaway bool
+	for {
+		f, err := fr.ReadFrame()
+		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				t.Fatal("the server kept an idle connection open")
+			}
+			if !goaway {
+				t.Fatalf("connection ended without GOAWAY: %v", err)
+			}
+			return
+		}
+		switch f := f.(type) {
+		case *http2.GoAwayFrame:
+			goaway = true
+		case *http2.PingFrame:
+			// The server confirms the GOAWAY was seen with a ping before closing.
+			if !f.IsAck() {
+				if err := fr.WritePing(true, f.Data); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
 }
 
 func TestGRPCCapsStreamsPerConnection(t *testing.T) {
