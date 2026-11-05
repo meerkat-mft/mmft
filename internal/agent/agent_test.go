@@ -643,3 +643,92 @@ func TestRepeatInstallChecksEverything(t *testing.T) {
 		}
 	}
 }
+
+// The saved certificate must carry a valid signature from the CA pinned at
+// enrollment, not just parse with the right key and ID.
+func TestRepeatInstallChecksTheCertificateSignature(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if _, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a")); err != nil {
+		t.Fatal(err)
+	}
+	good := install(o, "", "agent-a")
+	certPath, caPath := filepath.Join(dir, CertFile), filepath.Join(dir, CAFile)
+	certPEM, _ := os.ReadFile(certPath)
+	caPEM, _ := os.ReadFile(caPath)
+
+	block, _ := pem.Decode(certPEM)
+	corrupt := bytes.Clone(block.Bytes)
+	corrupt[len(corrupt)-1] ^= 0xff // The signature is the last field.
+	if _, err := x509.ParseCertificate(corrupt); err != nil {
+		t.Fatalf("the corrupted certificate must still parse: %v", err)
+	}
+	write := func(path string, data []byte) {
+		t.Helper()
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: corrupt}))
+	if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("corrupted signature: %v", err)
+	}
+	write(certPath, certPEM)
+
+	otherDir := filepath.Join(t.TempDir(), "ca")
+	if _, err := connca.Create(otherDir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	otherCA, err := os.ReadFile(filepath.Join(otherDir, "ca.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(caPath, otherCA)
+	if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("another CA: %v", err)
+	}
+	if err := os.Remove(caPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("missing CA: %v", err)
+	}
+	write(caPath, caPEM)
+	if _, err := CheckInstalled(dir, good, time.Now()); err != nil {
+		t.Fatalf("restored: %v", err)
+	}
+}
+
+// A re-enrollment that can't save its new certificate keeps the old one, so
+// the agent stays recoverable instead of damaged.
+func TestFailedReenrollmentKeepsTheOldCertificate(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs directory permissions that apply to this user")
+	}
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if _, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a")); err != nil {
+		t.Fatal(err)
+	}
+	later := func() time.Time { return time.Now().Add(25 * time.Hour) }
+	token := o.Token(t, "lab", "agent-a")
+	// A directory nobody can write to makes every replacement fail.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := Enroll(ctx, dir, install(o, token, "agent-a"), later)
+	if chmodErr := os.Chmod(dir, 0o700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	if !errors.Is(err, ErrSaveFailed) {
+		t.Fatalf("re-enrollment into a read-only directory: %v", err)
+	}
+	if _, err := CheckInstalled(dir, install(o, "", "agent-a"), later()); !errors.Is(err, ErrCertificateExpired) {
+		t.Fatalf("after the failed save: %v", err)
+	}
+	if _, err := Enroll(ctx, dir, install(o, token, "agent-a"), later); err != nil {
+		t.Fatalf("retry with the same token: %v", err)
+	}
+}

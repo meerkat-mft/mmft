@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"filippo.io/age"
@@ -39,6 +40,9 @@ const (
 	KeyFile   = "agent.key"
 	StateFile = "agent.json"
 	CertFile  = "connection.crt"
+	// CAFile holds the connection CA as pinned at enrollment, so the agent
+	// can check its own certificate's signature without the orchestrator.
+	CAFile = "ca.crt"
 	// IdentityFile holds the agent's verified identity statement.
 	IdentityFile = "identity.json"
 	lockFile     = ".lock"
@@ -296,7 +300,23 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 
-	creds := credentials.NewTLS(connca.PinnedClient(in.CAFingerprint, host, now))
+	// Keep the CA the handshake matched to the pin, to check the certificate
+	// against later.
+	var pinnedCA atomic.Pointer[x509.Certificate]
+	tlsConfig := connca.PinnedClient(in.CAFingerprint, host, now)
+	verify := tlsConfig.VerifyConnection
+	tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
+		if err := verify(cs); err != nil {
+			return err
+		}
+		for _, c := range cs.PeerCertificates[1:] {
+			if connca.Fingerprint(c) == in.CAFingerprint {
+				pinnedCA.Store(c)
+			}
+		}
+		return nil
+	}
+	creds := credentials.NewTLS(tlsConfig)
 	conn, err := grpc.NewClient(in.Orchestrator, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return State{}, err
@@ -320,14 +340,22 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 
-	// The certificate is written before the state, because the state marks a
-	// finished enrollment. A leftover certificate from a failed attempt goes.
-	certPath := filepath.Join(dir, CertFile)
-	if err := os.Remove(certPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	ca := pinnedCA.Load()
+	if ca == nil {
+		return State{}, ErrBadCertificate
+	}
+	if err := checkSignedBy(resp.GetConnectionCertificate(), ca); err != nil {
+		return State{}, err
+	}
+	// The CA and certificate are written before the state, because the state
+	// marks a finished enrollment. Each replaces any earlier file atomically,
+	// so a failed re-enrollment keeps the old certificate and can be retried.
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
+	if err := replaceFile(filepath.Join(dir, CAFile), caPEM, 0o644); err != nil {
 		return State{}, saveFailed(err)
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: resp.GetConnectionCertificate()})
-	if err := trust.WriteNew(certPath, certPEM, 0o644); err != nil {
+	if err := replaceFile(filepath.Join(dir, CertFile), certPEM, 0o644); err != nil {
 		return State{}, saveFailed(err)
 	}
 	if saved.Version != 0 {
@@ -386,19 +414,39 @@ func CheckInstalled(dir string, in Install, now time.Time) (State, error) {
 	return s, nil
 }
 
-// loadCertificate reads the connection certificate and requires it to hold
-// the agent's connection key and name its ID.
-func loadCertificate(dir string, s State, keys *Keys) (*x509.Certificate, error) {
-	certPEM, err := os.ReadFile(filepath.Join(filepath.Clean(dir), CertFile))
+// readCertificate reads one PEM certificate.
+func readCertificate(path string) (*x509.Certificate, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrDamaged, err)
 	}
-	block, _ := pem.Decode(certPEM)
+	block, _ := pem.Decode(data)
 	if block == nil || block.Type != "CERTIFICATE" {
 		return nil, ErrDamaged
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
+		return nil, ErrDamaged
+	}
+	return cert, nil
+}
+
+// loadCertificate reads the connection certificate and requires it to hold
+// the agent's connection key, name its ID, and carry a valid signature from
+// the CA pinned at enrollment.
+func loadCertificate(dir string, s State, keys *Keys) (*x509.Certificate, error) {
+	ca, err := readCertificate(filepath.Join(dir, CAFile))
+	if err != nil {
+		return nil, err
+	}
+	if !ca.IsCA || connca.Fingerprint(ca) != s.CAFingerprint {
+		return nil, ErrDamaged
+	}
+	cert, err := readCertificate(filepath.Join(dir, CertFile))
+	if err != nil {
+		return nil, err
+	}
+	if cert.CheckSignatureFrom(ca) != nil {
 		return nil, ErrDamaged
 	}
 	pub, ok := cert.PublicKey.(ed25519.PublicKey)
@@ -409,6 +457,16 @@ func loadCertificate(dir string, s State, keys *Keys) (*x509.Certificate, error)
 		return nil, ErrDamaged
 	}
 	return cert, nil
+}
+
+// checkSignedBy requires the new connection certificate to be signed by the
+// CA the handshake matched to the pin.
+func checkSignedBy(der []byte, ca *x509.Certificate) error {
+	cert, err := x509.ParseCertificate(der)
+	if err != nil || cert.CheckSignatureFrom(ca) != nil {
+		return ErrBadCertificate
+	}
+	return nil
 }
 
 // saveFailed reports a failure to save an enrollment the orchestrator already
