@@ -171,7 +171,11 @@ func (s *Server) API() http.Handler {
 	mux.Handle("POST /api/v1/agents/enrollment-tokens", s.requireAdmin(http.HandlerFunc(s.createToken)))
 	mux.Handle("GET /api/v1/agents", s.requireAdmin(http.HandlerFunc(s.listAgents)))
 	mux.Handle("PUT /api/v1/agents/{agent_id}/identity", s.requireAdmin(http.HandlerFunc(s.putIdentity)))
-	mux.Handle("/api/v1/", s.requireAdmin(http.NotFoundHandler()))
+	mux.Handle("GET /api/v1/agents/{agent_id}", s.requireAdmin(http.HandlerFunc(s.getAgent)))
+	// Anything else is a problem document too, never a plain-text page.
+	mux.Handle("/api/v1/", s.requireAdmin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		problem(w, http.StatusNotFound, "No such resource.")
+	})))
 	return mux
 }
 

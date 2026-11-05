@@ -50,3 +50,42 @@ func TestAPIClientRefusesRedirects(t *testing.T) {
 		t.Fatal("the token was sent over plain HTTP")
 	}
 }
+
+// The listing must move forward, so an orchestrator that sends cursors round
+// in a loop can't keep approve running forever.
+func TestAgentListingRefusesCursorLoops(t *testing.T) {
+	ca, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next := "019a3f2e-7c11-7d3e-9f7b-00000000000b"
+		if r.URL.Query().Get("cursor") == next {
+			next = "019a3f2e-7c11-7d3e-9f7b-00000000000a"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[],"next_cursor":"` + next + `"}`))
+	}))
+	api.TLS = &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		return ca.ServerCertificate([]string{"localhost"}, time.Now())
+	}}
+	api.StartTLS()
+	defer api.Close()
+	client, err := newAPIClient(strings.Replace(api.Listener.Addr().String(), "127.0.0.1", "localhost", 1), ca.Fingerprint(), "secret-token", time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.agents()
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "backwards") {
+			t.Fatalf("err = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the listing never ended")
+	}
+}

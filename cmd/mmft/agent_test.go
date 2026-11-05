@@ -8,8 +8,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +22,7 @@ import (
 	"time"
 
 	"mmft.dev/mmft/internal/agent"
+	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/server/servertest"
 )
 
@@ -58,13 +64,20 @@ func (a approveSetup) install(t *testing.T, name string) (agent.State, string) {
 
 func (a approveSetup) approve(t *testing.T, fingerprints string) (int, approvalReport, string) {
 	t.Helper()
+	return a.approveAt(t, a.o.API, fingerprints)
+}
+
+// approveAt runs approve against the API at addr, such as a proxy in front of
+// the test orchestrator.
+func (a approveSetup) approveAt(t *testing.T, api, fingerprints string) (int, approvalReport, string) {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "fingerprints.json")
 	if err := os.WriteFile(path, []byte(fingerprints), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out, errOut bytes.Buffer
 	code := run([]string{
-		"agent", "approve", "--api", a.o.API, "--ca-fingerprint", a.o.CA.Fingerprint(), "--token-file", a.tokenFile,
+		"agent", "approve", "--api", api, "--ca-fingerprint", a.o.CA.Fingerprint(), "--token-file", a.tokenFile,
 		"--admin-dir", a.adminDir, "--passphrase-file", a.passFile, "--certificate", a.cert,
 		"--root-public", filepath.Join(a.rootDir, "root.pub.json"), "--root-fingerprint", a.rootFP,
 		"--fingerprints", path, "--days", "30",
@@ -231,5 +244,51 @@ func TestApproveChecksWorkspaceAndApprovedAgents(t *testing.T) {
 	moved.Workspace = "prod"
 	if code, report, _ := a.approve(t, collected(moved)); code != exitRefused || len(report.Refused) != 1 || len(report.Skipped) != 0 {
 		t.Fatalf("approved agent in another workspace: %d %+v", code, report)
+	}
+}
+
+// failingProxy forwards to the test orchestrator's API, but answers 500 for
+// one agent's identity, as an API blip would.
+func failingProxy(t *testing.T, o servertest.Orchestrator, failID string) string {
+	t.Helper()
+	target, err := url.Parse("https://" + o.API)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = &http.Transport{TLSClientConfig: connca.PinnedClient(o.CA.Fingerprint(), "localhost", time.Now)}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/api/v1/agents/"+failID+"/identity" {
+			http.Error(w, "unavailable", http.StatusInternalServerError)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	srv.TLS = &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		return o.CA.ServerCertificate([]string{"localhost"}, time.Now())
+	}}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return strings.Replace(srv.Listener.Addr().String(), "127.0.0.1", "localhost", 1)
+}
+
+// An API error for one agent doesn't stop the run, and the report says what
+// happened to every agent.
+func TestApproveReportsEveryAgentAfterAnAPIError(t *testing.T) {
+	a := newApproveSetup(t)
+	agentA, _ := a.install(t, "agent-a")
+	agentB, _ := a.install(t, "agent-b")
+	agentC, _ := a.install(t, "agent-c")
+	code, report, errOut := a.approveAt(t, failingProxy(t, a.o, agentB.AgentID), collected(agentA)+collected(agentB)+collected(agentC))
+	if code != exitFailure || !strings.Contains(errOut, "see the report") {
+		t.Fatalf("approve: %d %s", code, errOut)
+	}
+	if len(report.Approved) != 2 || len(report.Failed) != 1 || report.Failed[0].AgentID != agentB.AgentID || report.Failed[0].Reason == "" {
+		t.Fatalf("report = %+v", report)
+	}
+	// A repeat run finishes the job.
+	code, report, _ = a.approve(t, collected(agentA)+collected(agentB)+collected(agentC))
+	if code != exitOK || len(report.Approved) != 1 || len(report.Skipped) != 2 {
+		t.Fatalf("repeat: %d %+v", code, report)
 	}
 }

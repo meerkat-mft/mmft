@@ -27,6 +27,8 @@ const (
 	maxTokenBytes    = 4096
 	maxResponseBytes = 8 << 20
 	pageSize         = 200
+	// maxPages bounds the listing at 200,000 agents.
+	maxPages = 1000
 )
 
 // errRefused means at least one agent did not match what was collected from
@@ -211,6 +213,7 @@ type listedAgent struct {
 func (c *apiClient) agents() (map[string]listedAgent, error) {
 	all := map[string]listedAgent{}
 	cursor := ""
+	pages := 0
 	for {
 		q := url.Values{"limit": {fmt.Sprint(pageSize)}}
 		if cursor != "" {
@@ -226,8 +229,16 @@ func (c *apiClient) agents() (map[string]listedAgent, error) {
 		for _, a := range page.Items {
 			all[a.ID] = a
 		}
-		if page.NextCursor == "" || page.NextCursor == cursor {
+		if page.NextCursor == "" {
 			return all, nil
+		}
+		// IDs are ordered, so each cursor must come after the last. That stops
+		// an orchestrator from sending the listing round in a loop.
+		if page.NextCursor <= cursor {
+			return nil, errors.New("the orchestrator sent a cursor that goes backwards")
+		}
+		if pages++; pages >= maxPages {
+			return nil, errors.New("the orchestrator listed too many pages of agents")
 		}
 		cursor = page.NextCursor
 	}
@@ -243,7 +254,14 @@ type approvalReport struct {
 	Approved []approvalResult `json:"approved"`
 	Skipped  []approvalResult `json:"skipped"`
 	Refused  []approvalResult `json:"refused"`
+	// Failed lists agents whose identity was signed but couldn't be stored,
+	// for example after an API error. A repeat run tries them again.
+	Failed []approvalResult `json:"failed"`
 }
+
+// errApprovalFailed means the run went on past an API error, and the report
+// says which agents it affected.
+var errApprovalFailed = errors.New("some agents could not be approved, so see the report and run approve again")
 
 // agentApprove signs the identity of each pending agent in the fingerprints
 // file, only if its keys, ID, workspace, and name match what was collected from
@@ -311,7 +329,7 @@ func agentApprove(args []string, stdout, stderr io.Writer, now func() time.Time)
 	if err != nil {
 		return err
 	}
-	report := approvalReport{Approved: []approvalResult{}, Skipped: []approvalResult{}, Refused: []approvalResult{}}
+	report := approvalReport{Approved: []approvalResult{}, Skipped: []approvalResult{}, Refused: []approvalResult{}, Failed: []approvalResult{}}
 	for _, want := range expected {
 		result := approvalResult{AgentID: want.AgentID, AgentName: want.AgentName}
 		got, ok := listed[want.AgentID]
@@ -358,15 +376,22 @@ func agentApprove(args []string, stdout, stderr io.Writer, now func() time.Time)
 		if err != nil {
 			return err
 		}
+		// A failure for one agent doesn't stop the others, and the report is
+		// always printed, so a deployment tool knows what changed.
 		if err := client.do(http.MethodPut, "/agents/"+got.ID+"/identity", identity, http.StatusNoContent, nil); err != nil {
-			return fmt.Errorf("agent %s: %w", got.ID, err)
+			result.Reason = err.Error()
+			report.Failed = append(report.Failed, result)
+			continue
 		}
 		report.Approved = append(report.Approved, result)
 	}
 	if err := output(stdout, report); err != nil {
 		return err
 	}
-	if len(report.Refused) > 0 {
+	switch {
+	case len(report.Failed) > 0:
+		return errApprovalFailed
+	case len(report.Refused) > 0:
 		return errRefused
 	}
 	return nil
