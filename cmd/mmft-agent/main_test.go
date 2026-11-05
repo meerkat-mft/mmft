@@ -185,3 +185,29 @@ func TestIdentityWaitsForApproval(t *testing.T) {
 		t.Fatalf("identity = %v", got)
 	}
 }
+
+// Exit 3 means the same settings, the keys, and a current certificate are in
+// place. Anything else is a failure a deployment tool must see.
+func TestRepeatInstallIsSafeOnlyWhenNothingChanged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no key storage on Windows yet")
+	}
+	o := servertest.Start(t)
+	dir := filepath.Join(t.TempDir(), "agent")
+	token := tokenFile(t, o.Token(t, "lab", "agent-a"))
+	if code, _, errOut := cli(t, installArgs(o, dir, "agent-a", token)...); code != exitOK {
+		t.Fatalf("install: %d %s", code, errOut)
+	}
+	if code, _, _ := cli(t, installArgs(o, dir, "agent-a", token)...); code != exitExists {
+		t.Fatalf("same settings: %d", code)
+	}
+	if code, _, errOut := cli(t, installArgs(o, dir, "agent-b", token)...); code != exitFailure || !strings.Contains(errOut, "other settings") {
+		t.Fatalf("other name: %d %s", code, errOut)
+	}
+	if err := os.Remove(filepath.Join(dir, agent.KeyFile)); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := cli(t, installArgs(o, dir, "agent-a", token)...); code != exitFailure || !strings.Contains(errOut, "damaged") {
+		t.Fatalf("missing key file: %d %s", code, errOut)
+	}
+}

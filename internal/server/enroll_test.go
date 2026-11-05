@@ -75,8 +75,14 @@ func newAgent(t *testing.T, token, name string) *agentv1.EnrollRequest {
 	return newAgentWithCSR(t, token, "lab", name, csr)
 }
 
-// newAgentWithCSR builds a request with a valid proof over any CSR bytes.
-func newAgentWithCSR(t *testing.T, token, workspace, name string, csr []byte) *agentv1.EnrollRequest {
+// testKeys are an agent's signing key and encryption recipient, kept so a test
+// can sign several requests as the same agent.
+type testKeys struct {
+	signer    *statement.Signer
+	recipient string
+}
+
+func newTestKeys(t *testing.T) testKeys {
 	t.Helper()
 	signer, err := statement.GenerateSigner(statement.RoleAgent)
 	if err != nil {
@@ -86,18 +92,30 @@ func newAgentWithCSR(t *testing.T, token, workspace, name string, csr []byte) *a
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipient := enc.Recipient().String()
-	proof, err := trust.ProveEnrollment(signer, token, workspace, name, recipient, csr)
+	return testKeys{signer: signer, recipient: enc.Recipient().String()}
+}
+
+// request builds a request with a valid proof over any CSR bytes.
+func (k testKeys) request(t *testing.T, token, workspace, name string, csr []byte) *agentv1.EnrollRequest {
+	t.Helper()
+	proof, err := trust.ProveEnrollment(k.signer, token, workspace, name, k.recipient, csr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	proofBytes, _ := json.Marshal(proof)
-	ed, ml := signer.Public().Bytes()
-	keys := trust.AgentKeys{Ed25519: ed, MLDSA65: ml, Recipient: recipient}
+	ed, ml := k.signer.Public().Bytes()
+	keys := trust.AgentKeys{Ed25519: ed, MLDSA65: ml, Recipient: k.recipient}
 	return &agentv1.EnrollRequest{
 		Token: token, AgentId: keys.AgentID(), Workspace: workspace, AgentName: name, Ed25519PublicKey: ed, Mldsa65PublicKey: ml,
-		EncryptionRecipient: recipient, CertificateRequest: csr, ProofStatement: proofBytes,
+		EncryptionRecipient: k.recipient, CertificateRequest: csr, ProofStatement: proofBytes,
 	}
+}
+
+// newAgentWithCSR builds a request for new keys with a valid proof over any
+// CSR bytes.
+func newAgentWithCSR(t *testing.T, token, workspace, name string, csr []byte) *agentv1.EnrollRequest {
+	t.Helper()
+	return newTestKeys(t).request(t, token, workspace, name, csr)
 }
 
 func (h harness) enroll(t *testing.T, req *agentv1.EnrollRequest) (*agentv1.EnrollResponse, error) {
@@ -172,8 +190,8 @@ func TestUsedTokenFails(t *testing.T) {
 	}
 }
 
-// An agent whose response was lost can repeat its request with the same keys,
-// even after the token expires, and gets the same agent.
+// An agent whose response was lost can repeat its request with the same keys
+// while the token is valid, and gets the same agent.
 func TestSameAgentCanRepeatEnrollment(t *testing.T) {
 	h := start(t)
 	req := newAgent(t, h.token(t, "lab", "agent-a"), "agent-a")
@@ -181,7 +199,7 @@ func TestSameAgentCanRepeatEnrollment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.clock.advance(TokenLifetime)
+	h.clock.advance(TokenLifetime / 2)
 	again, err := h.enroll(t, req)
 	if err != nil {
 		t.Fatalf("repeat: %v", err)
@@ -346,8 +364,16 @@ func TestCreateTokenValidates(t *testing.T) {
 	if _, err := h.enroll(t, newAgent(t, h.token(t, "lab", "agent-a"), "agent-a")); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := h.post(t, path, adminToken, map[string]string{"agent_name": "agent-a", "workspace": "lab"}); code != http.StatusConflict {
+	// A token for an existing agent is a re-enrollment, refused only once the
+	// agent is revoked.
+	if code, _ := h.post(t, path, adminToken, map[string]string{"agent_name": "agent-a", "workspace": "lab"}); code != http.StatusCreated {
 		t.Errorf("existing agent: status %d", code)
+	}
+	if _, err := h.db.Exec(context.Background(), `UPDATE agents SET status = 'revoked' WHERE name = 'agent-a'`); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := h.post(t, path, adminToken, map[string]string{"agent_name": "agent-a", "workspace": "lab"}); code != http.StatusConflict {
+		t.Errorf("revoked agent: status %d", code)
 	}
 	h.token(t, "other", "agent-a")
 }
@@ -396,4 +422,50 @@ func csrFor(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return csr
+}
+
+// A used token works again only within its lifetime. After that, a new token
+// re-enrolls the agent, but only with its own keys.
+func TestReenrollmentKeepsTheAgentsKeys(t *testing.T) {
+	h := start(t)
+	keys := newTestKeys(t)
+	req := keys.request(t, h.token(t, "lab", "agent-a"), "lab", "agent-a", csrFor(t))
+	first, err := h.enroll(t, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.clock.advance(TokenLifetime)
+	if _, err := h.enroll(t, req); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("retry after the token expired: %v", err)
+	}
+
+	// The same keys with a new token get a fresh certificate for the same agent.
+	again, err := h.enroll(t, keys.request(t, h.token(t, "lab", "agent-a"), "lab", "agent-a", csrFor(t)))
+	if err != nil {
+		t.Fatalf("re-enrollment: %v", err)
+	}
+	if again.GetAgentId() != first.GetAgentId() || len(again.GetConnectionCertificate()) == 0 {
+		t.Fatalf("re-enrolled as %q, want %q", again.GetAgentId(), first.GetAgentId())
+	}
+
+	// Other keys can't use a token to take the agent's name.
+	if _, err := h.enroll(t, newAgent(t, h.token(t, "lab", "agent-a"), "agent-a")); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("other keys under the same name: %v", err)
+	}
+	var agents, identities int
+	if err := h.db.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM agents), (SELECT count(*) FROM agent_identities)`).Scan(&agents, &identities); err != nil {
+		t.Fatal(err)
+	}
+	if agents != 1 || identities != 1 {
+		t.Fatalf("agents = %d, identities = %d", agents, identities)
+	}
+
+	// A re-enrollment token is one-use too.
+	token := h.token(t, "lab", "agent-a")
+	if _, err := h.enroll(t, keys.request(t, token, "lab", "agent-a", csrFor(t))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.enroll(t, newAgent(t, token, "agent-a")); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("used re-enrollment token with other keys: %v", err)
+	}
 }

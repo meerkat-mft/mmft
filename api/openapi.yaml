@@ -86,7 +86,7 @@ paths:
     post:
       operationId: createEnrollmentToken
       summary: Create a one-use enrollment token
-      description: The token enrolls one agent with this name, and expires after one hour. The workspace is created if it doesn't exist yet.
+      description: The token enrolls one agent with this name, and expires after one hour. The workspace is created if it doesn't exist yet. For an agent that already exists, the token re-enrolls it, and works only with that agent's own keys, for example after a lost token or an expired connection certificate. A revoked agent gets 409.
       tags: [Agents]
       requestBody:
         required: true

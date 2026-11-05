@@ -344,13 +344,15 @@ func TestConcurrentInstallsAgree(t *testing.T) {
 		switch {
 		case r.err == nil:
 			enrolled = append(enrolled, r.s)
-		case errors.Is(r.err, ErrAlreadyEnrolled):
+		case errors.Is(r.err, ErrOtherSettings):
+			// The two installs name different agents, so the loser is told
+			// the directory holds another agent, never that it's a safe repeat.
 			existed = append(existed, r.s)
 		default:
 			t.Fatalf("install: %v", r.err)
 		}
 	}
-	if len(enrolled) != 1 || len(existed) != 1 || existed[0].AgentID != enrolled[0].AgentID {
+	if len(enrolled) != 1 || len(existed) != 1 {
 		t.Fatalf("enrolled %+v, existed %+v", enrolled, existed)
 	}
 	certPEM, err := os.ReadFile(filepath.Join(dir, CertFile))
@@ -575,5 +577,69 @@ func TestAgentIDMustComeFromTheKeys(t *testing.T) {
 	}
 	if _, err := ReadState(dir); !errors.Is(err, ErrDamaged) {
 		t.Fatalf("saved ID not from the keys: %v", err)
+	}
+}
+
+// A repeat install is a safe repeat only with the same settings, the keys,
+// and a current certificate in place. An expired certificate re-enrolls with
+// a new token and the same keys.
+func TestRepeatInstallChecksEverything(t *testing.T) {
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	first, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := install(o, "", "agent-a")
+	if _, err := CheckInstalled(dir, good, time.Now()); err != nil {
+		t.Fatalf("healthy agent: %v", err)
+	}
+	for name, change := range map[string]func(*Install){
+		"other name":         func(i *Install) { i.AgentName = "agent-b" },
+		"other workspace":    func(i *Install) { i.Workspace = "prod" },
+		"other orchestrator": func(i *Install) { i.Orchestrator = "elsewhere:7443" },
+		"other CA pin":       func(i *Install) { i.CAFingerprint = rootPin },
+		"other root pin":     func(i *Install) { i.RootFingerprint = o.CA.Fingerprint() },
+	} {
+		in := good
+		change(&in)
+		if _, err := CheckInstalled(dir, in, time.Now()); !errors.Is(err, ErrOtherSettings) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	// The certificate expires after 24 hours, for example while approval waits.
+	later := time.Now().Add(25 * time.Hour)
+	if _, err := CheckInstalled(dir, good, later); !errors.Is(err, ErrCertificateExpired) {
+		t.Fatalf("expired certificate: %v", err)
+	}
+	if _, err := FetchIdentity(context.Background(), dir, func() time.Time { return later }); !errors.Is(err, ErrCertificateExpired) {
+		t.Fatalf("identity with an expired certificate: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	in := install(o, o.Token(t, "lab", "agent-a"), "agent-a")
+	again, err := Enroll(ctx, dir, in, func() time.Time { return later })
+	if err != nil {
+		t.Fatalf("re-enrollment: %v", err)
+	}
+	if again.AgentID != first.AgentID {
+		t.Fatalf("re-enrolled as %q, want %q", again.AgentID, first.AgentID)
+	}
+	if _, err := CheckInstalled(dir, good, time.Now()); err != nil {
+		t.Fatalf("after re-enrollment: %v", err)
+	}
+
+	// Missing files are damage, never a safe repeat.
+	for _, file := range []string{CertFile, KeyFile} {
+		if err := os.Rename(filepath.Join(dir, file), filepath.Join(dir, file+".gone")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := CheckInstalled(dir, good, time.Now()); !errors.Is(err, ErrDamaged) {
+			t.Errorf("missing %s: %v", file, err)
+		}
+		if err := os.Rename(filepath.Join(dir, file+".gone"), filepath.Join(dir, file)); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
