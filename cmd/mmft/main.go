@@ -1,6 +1,7 @@
 // Command mmft is the Meerkat MFT CLI. Every command runs without prompts and
 // writes JSON to stdout, and failures write JSON to stderr, so it can run from a
-// script. The exception is version, which prints plain text.
+// script. The exceptions are version and usage errors, which print plain text.
+// Exit codes are listed in docs/naming.md.
 package main
 
 import (
@@ -41,6 +42,8 @@ const usage = `usage:
   mmft agent approve --api HOST:PORT --ca-fingerprint HEX --token-file FILE
                      --admin-dir DIR --passphrase-file FILE --certificate FILE
                      --root-public FILE --root-fingerprint HEX --fingerprints FILE [--days N]
+
+exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused
 `
 
 var errUsage = errors.New("incorrect usage")
