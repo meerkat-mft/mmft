@@ -618,6 +618,10 @@ func TestRepeatInstallChecksEverything(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	before, err := readCertificate(filepath.Join(dir, CertFile))
+	if err != nil {
+		t.Fatal(err)
+	}
 	in := install(o, o.Token(t, "lab", "agent-a"), "agent-a")
 	again, err := Enroll(ctx, dir, in, func() time.Time { return later })
 	if err != nil {
@@ -625,6 +629,15 @@ func TestRepeatInstallChecksEverything(t *testing.T) {
 	}
 	if again.AgentID != first.AgentID {
 		t.Fatalf("re-enrolled as %q, want %q", again.AgentID, first.AgentID)
+	}
+	// Only the agent's clock moved, so the old certificate would still pass a
+	// check at the real time. Require a new one.
+	after, err := readCertificate(filepath.Join(dir, CertFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.SerialNumber.Cmp(before.SerialNumber) == 0 || bytes.Equal(after.Raw, before.Raw) {
+		t.Fatal("re-enrollment kept the old certificate")
 	}
 	if _, err := CheckInstalled(dir, good, time.Now()); err != nil {
 		t.Fatalf("after re-enrollment: %v", err)
