@@ -18,11 +18,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
@@ -37,30 +35,6 @@ const (
 	shutdownTimeout   = 10 * time.Second
 )
 
-// limits bound what one network peer can hold open. Enrollment needs no
-// certificate, so anything on the network can open connections and streams;
-// without these bounds a peer could pin goroutines and descriptors for ever.
-type limits struct {
-	// maxConnections caps accepted connections per listener.
-	maxConnections int
-	// maxStreams caps concurrent gRPC streams per connection.
-	maxStreams uint32
-	// connectionIdle closes a gRPC connection with no open stream after this long.
-	connectionIdle time.Duration
-	// readTimeout, writeTimeout, and idleTimeout bound one REST request, one
-	// response, and the keep-alive wait between requests.
-	readTimeout, writeTimeout, idleTimeout time.Duration
-}
-
-var defaultLimits = limits{
-	maxConnections: 1024,
-	maxStreams:     32,
-	connectionIdle: 5 * time.Minute,
-	readTimeout:    30 * time.Second,
-	writeTimeout:   30 * time.Second,
-	idleTimeout:    60 * time.Second,
-}
-
 // Config configures a server.
 type Config struct {
 	Authority *connca.Authority
@@ -74,12 +48,11 @@ type Config struct {
 
 // Server holds the gRPC and REST handlers.
 type Server struct {
-	cfg    Config
-	limits limits
-	mu     sync.Mutex
-	cert   *tls.Certificate
-	token  []byte
-	grpc   *grpc.Server
+	cfg   Config
+	mu    sync.Mutex
+	cert  *tls.Certificate
+	token []byte
+	grpc  *grpc.Server
 }
 
 // New validates a configuration and builds a server.
@@ -94,12 +67,10 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	s := &Server{cfg: cfg, limits: defaultLimits, token: token}
+	s := &Server{cfg: cfg, token: token}
 	s.grpc = grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(s.tlsConfig())),
 		grpc.MaxRecvMsgSize(maxMessageBytes),
-		grpc.MaxConcurrentStreams(s.limits.maxStreams),
-		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: s.limits.connectionIdle}),
 		grpc.UnaryInterceptor(s.unaryAuth),
 		grpc.StreamInterceptor(s.streamAuth),
 	)
@@ -235,15 +206,10 @@ func problem(w http.ResponseWriter, code int, title string) {
 
 // Serve runs both listeners until ctx ends.
 func (s *Server) Serve(ctx context.Context, grpcListener, apiListener net.Listener) error {
-	grpcListener = netutil.LimitListener(grpcListener, s.limits.maxConnections)
-	apiListener = netutil.LimitListener(apiListener, s.limits.maxConnections)
 	api := &http.Server{
 		Handler:           s.API(),
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: s.certificate},
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       s.limits.readTimeout,
-		WriteTimeout:      s.limits.writeTimeout,
-		IdleTimeout:       s.limits.idleTimeout,
 	}
 	errs := make(chan error, 2)
 	go func() { errs <- s.grpc.Serve(grpcListener) }()
