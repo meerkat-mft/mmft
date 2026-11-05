@@ -33,10 +33,19 @@ M1: Skeleton. Work is tracked in [GitHub issues](https://github.com/meerkat-mft/
 - Public copy names no specific companies or products.
 - File names never go in audit events, delivery manifests, or receipts, only in `delivery_files`.
 
+## Git and checks
+
+- Other sessions work in parallel. Before starting an issue or a step, run `git fetch` and check the open and merged pull requests that mention it.
+- Stage files by name, never with `git add -A` or `git add .`, and read `git status` before every commit.
+- Before pushing to a pull request branch, check that the pull request is still open. Anything pushed after a merge needs a new pull request.
+- Run `scripts/check.sh` before pushing. It runs what CI runs and stops at the first failure. Never pipe a check through `tail`, `grep`, or `head`, which hides its exit code.
+- Tests that need Postgres skip without `MMFT_TEST_DATABASE_URL`. `scripts/check.sh` starts a throwaway database for them.
+
 ## Behavioral guidelines
 
 - Build what the issue asks and no more: no speculative features, configuration, or abstractions for single-use code.
 - Touch only what the task needs, and match the existing style. Mention unrelated problems instead of fixing them.
 - Remove imports, variables, and functions that your change made unused, but leave pre-existing dead code alone.
 - Prove each change with a test. Reproduce a bug in a test before fixing it, and keep tests passing through a refactor.
+- Prove a security check with a mutation: break the guarded code, show that a test fails, then restore it.
 - When a request has more than one reasonable reading, or a simpler approach exists, say so before building.
