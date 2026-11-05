@@ -40,8 +40,13 @@ message EnrollRequest {
   // PKCS#10 request for the connection certificate.
   bytes certificate_request = 6;
   // Enrollment request statement signed with both agent keys, which proves the
-  // agent holds them. See ADR 0018.
+  // agent holds them. See ADR 0019.
   bytes proof_statement = 7;
+  // The agent ID, derived from the keys as ADR 0019 defines. The orchestrator
+  // must store the agent under this ID, and refuses one that doesn't match.
+  string agent_id = 8;
+  // The workspace the install command named. It must match the token's.
+  string workspace = 9;
 }
 
 message EnrollResponse {

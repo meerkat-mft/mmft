@@ -47,7 +47,7 @@ func (a approveSetup) install(t *testing.T, name string) (agent.State, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	s, err := agent.Enroll(ctx, dir, agent.Install{
-		Orchestrator: a.o.GRPC, Token: a.o.Token(t, "lab", name), AgentName: name,
+		Orchestrator: a.o.GRPC, Token: a.o.Token(t, "lab", name), Workspace: "lab", AgentName: name,
 		CAFingerprint: a.o.CA.Fingerprint(), RootFingerprint: a.rootFP,
 	}, time.Now)
 	if err != nil {
@@ -80,7 +80,7 @@ func (a approveSetup) approve(t *testing.T, fingerprints string) (int, approvalR
 
 // collected is what `mmft-agent fingerprint --json` prints on the host.
 func collected(s agent.State) string {
-	b, _ := json.Marshal(map[string]string{"agent_id": s.AgentID, "agent_name": s.AgentName, "fingerprint": s.Fingerprint()})
+	b, _ := json.Marshal(map[string]string{"agent_id": s.AgentID, "workspace": s.Workspace, "agent_name": s.AgentName, "fingerprint": s.Fingerprint()})
 	return string(b) + "\n"
 }
 
@@ -190,7 +190,7 @@ func TestTokenPrintsWhatTheInstallNeeds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, err := agent.Enroll(ctx, filepath.Join(t.TempDir(), "agent"), agent.Install{
-		Orchestrator: got["orchestrator"], Token: got["token"], AgentName: got["agent_name"],
+		Orchestrator: got["orchestrator"], Token: got["token"], Workspace: got["workspace"], AgentName: got["agent_name"],
 		CAFingerprint: got["ca_fingerprint"], RootFingerprint: got["root_fingerprint"],
 	}, time.Now)
 	if err != nil {
@@ -199,5 +199,37 @@ func TestTokenPrintsWhatTheInstallNeeds(t *testing.T) {
 	// The agent exists now, which a repeat run reports as a safe repeat.
 	if code, _ := a.token(t, "agent-a"); code != exitExists {
 		t.Fatalf("existing agent: %d", code)
+	}
+}
+
+// ADR 0019: the workspace comes from the host, and an already approved agent
+// is checked against its host too, never skipped blindly.
+func TestApproveChecksWorkspaceAndApprovedAgents(t *testing.T) {
+	a := newApproveSetup(t)
+	agentA, _ := a.install(t, "agent-a")
+
+	moved := agentA
+	moved.Workspace = "prod"
+	if code, report, _ := a.approve(t, collected(moved)); code != exitRefused || len(report.Refused) != 1 || len(report.Approved) != 0 {
+		t.Fatalf("other workspace: %d %+v", code, report)
+	}
+
+	if code, report, errOut := a.approve(t, collected(agentA)); code != exitOK || len(report.Approved) != 1 {
+		t.Fatalf("approve: %d %+v %s", code, report, errOut)
+	}
+	if code, report, _ := a.approve(t, collected(agentA)); code != exitOK || len(report.Skipped) != 1 {
+		t.Fatalf("repeat: %d %+v", code, report)
+	}
+
+	// A changed fingerprint for an approved agent is refused, not skipped.
+	other, _ := a.install(t, "agent-x")
+	changed := agentA
+	changed.Ed25519, changed.MLDSA65, changed.Recipient = other.Ed25519, other.MLDSA65, other.Recipient
+	if code, report, _ := a.approve(t, collected(changed)); code != exitRefused || len(report.Refused) != 1 || len(report.Skipped) != 0 {
+		t.Fatalf("approved agent with a changed fingerprint: %d %+v", code, report)
+	}
+	moved.Workspace = "prod"
+	if code, report, _ := a.approve(t, collected(moved)); code != exitRefused || len(report.Refused) != 1 || len(report.Skipped) != 0 {
+		t.Fatalf("approved agent in another workspace: %d %+v", code, report)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +32,7 @@ import (
 const rootPin = "1111111111111111111111111111111111111111111111111111111111111111"
 
 func install(o servertest.Orchestrator, token, name string) Install {
-	return Install{Orchestrator: o.GRPC, Token: token, AgentName: name, CAFingerprint: o.CA.Fingerprint(), RootFingerprint: rootPin}
+	return Install{Orchestrator: o.GRPC, Token: token, Workspace: "lab", AgentName: name, CAFingerprint: o.CA.Fingerprint(), RootFingerprint: rootPin}
 }
 
 func enroll(t *testing.T, dir string, in Install) (State, error) {
@@ -74,8 +76,29 @@ func TestEnrollSavesKeysAndState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(state), "seed") || strings.Contains(string(state), "AGE-SECRET-KEY") {
-		t.Fatal("the state file holds private keys")
+	// Only public fields are saved, and no private key appears in any form.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(state, &fields); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if got := strings.Join(names, ","); got != "agent_id,agent_name,ca_fingerprint,ed25519,encryption_recipient,mldsa65,orchestrator,root_fingerprint,version,workspace" {
+		t.Fatalf("state fields = %s", got)
+	}
+	edSeed, mlSeed := keys.Signer.Seeds()
+	for name, secret := range map[string]string{
+		"ed25519 seed":        base64.StdEncoding.EncodeToString(edSeed),
+		"ml-dsa seed":         base64.StdEncoding.EncodeToString(mlSeed),
+		"connection seed":     base64.StdEncoding.EncodeToString(keys.Connection.Seed()),
+		"encryption identity": keys.Encryption.String(),
+	} {
+		if strings.Contains(string(state), secret) {
+			t.Fatalf("the state file holds the %s", name)
+		}
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(filepath.Join(dir, KeyFile))
@@ -152,11 +175,13 @@ func TestUsedTokenIsRefused(t *testing.T) {
 }
 
 func TestInvalidInstallSettings(t *testing.T) {
-	good := Install{Orchestrator: "orchestrator:7443", Token: "t", AgentName: "agent-a", CAFingerprint: rootPin, RootFingerprint: rootPin}
+	good := Install{Orchestrator: "orchestrator:7443", Token: "t", Workspace: "lab", AgentName: "agent-a", CAFingerprint: rootPin, RootFingerprint: rootPin}
 	for name, change := range map[string]func(*Install){
 		"no port":        func(i *Install) { i.Orchestrator = "orchestrator" },
 		"no token":       func(i *Install) { i.Token = "" },
 		"bad name":       func(i *Install) { i.AgentName = "../a" },
+		"no workspace":   func(i *Install) { i.Workspace = "" },
+		"bad workspace":  func(i *Install) { i.Workspace = "../w" },
 		"short pin":      func(i *Install) { i.CAFingerprint = "abcd" },
 		"upper-case pin": func(i *Install) { i.RootFingerprint = strings.ToUpper(strings.Repeat("ab", 32)) },
 	} {
@@ -223,7 +248,7 @@ func enrollDirectly(t *testing.T, dir string, o servertest.Orchestrator, token, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	proof, err := trust.ProveEnrollment(keys.Signer, token, name, pub.Recipient, csr)
+	proof, err := trust.ProveEnrollment(keys.Signer, token, "lab", name, pub.Recipient, csr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +262,7 @@ func enrollDirectly(t *testing.T, dir string, o servertest.Orchestrator, token, 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resp, err := agentv1.NewEnrollmentServiceClient(conn).Enroll(ctx, &agentv1.EnrollRequest{
-		Token: token, AgentName: name, Ed25519PublicKey: pub.Ed25519, Mldsa65PublicKey: pub.MLDSA65,
+		Token: token, AgentId: pub.AgentID(), Workspace: "lab", AgentName: name, Ed25519PublicKey: pub.Ed25519, Mldsa65PublicKey: pub.MLDSA65,
 		EncryptionRecipient: pub.Recipient, CertificateRequest: csr, ProofStatement: proofBytes,
 	})
 	if err != nil {
@@ -383,7 +408,7 @@ func TestIncompleteStateIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"orchestrator", "ca_fingerprint", "root_fingerprint", "agent_id", "agent_name"} {
+	for _, field := range []string{"orchestrator", "ca_fingerprint", "root_fingerprint", "agent_id", "workspace", "agent_name"} {
 		for name, value := range map[string]any{"missing": nil, "invalid": "../x"} {
 			var m map[string]any
 			if err := json.Unmarshal(good, &m); err != nil {
@@ -486,9 +511,9 @@ func TestVerifyIdentityRequiresThisAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, identity := range map[string][]byte{
-		"other keys":     ap.Sign(t, s.AgentID, "lab", "agent-a", other.Public()),
-		"other agent ID": ap.Sign(t, "019a3f2e-7c11-7d3e-9f7b-000000000000", "lab", "agent-a", s.Keys()),
-		"other name":     ap.Sign(t, s.AgentID, "lab", "agent-b", s.Keys()),
+		"another agent":   ap.Sign(t, other.Public().AgentID(), "lab", "agent-a", other.Public()),
+		"other workspace": ap.Sign(t, s.AgentID, "prod", "agent-a", s.Keys()),
+		"other name":      ap.Sign(t, s.AgentID, "lab", "agent-b", s.Keys()),
 	} {
 		if _, err := VerifyIdentity(s, identity, time.Now()); !errors.Is(err, ErrWrongIdentity) {
 			t.Errorf("%s: err = %v", name, err)
@@ -496,5 +521,59 @@ func TestVerifyIdentityRequiresThisAgent(t *testing.T) {
 	}
 	if _, err := VerifyIdentity(s, ap.Sign(t, s.AgentID, "lab", "agent-a", s.Keys()), time.Now()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An ID that is a valid UUID but not the one derived from the keys is refused,
+// both from the orchestrator and in saved state.
+func TestAgentIDMustComeFromTheKeys(t *testing.T) {
+	keys, err := LoadOrCreateKeys(agentDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A valid certificate for this agent's connection key, naming an ID the
+	// orchestrator chose. Only the derived-ID check can refuse it.
+	const other = "019a3f2e-7c11-7d3e-9f7b-000000000000"
+	ca, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, keys.Connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := ca.SignAgent(csr, other, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &agentv1.EnrollResponse{AgentId: other, ConnectionCertificate: der}
+	if err := checkCertificate(resp, keys.Connection, other); err != nil {
+		t.Fatalf("the certificate itself must be valid: %v", err)
+	}
+	if err := checkCertificate(resp, keys.Connection, keys.Public().AgentID()); !errors.Is(err, ErrBadCertificate) {
+		t.Fatalf("orchestrator's own ID: %v", err)
+	}
+
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if _, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, StateFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["agent_id"] = other
+	changed, _ := json.Marshal(m)
+	if err := os.WriteFile(path, changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadState(dir); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("saved ID not from the keys: %v", err)
 	}
 }

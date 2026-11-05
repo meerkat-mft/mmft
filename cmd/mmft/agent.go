@@ -38,6 +38,7 @@ var errRedirect = errors.New("the orchestrator API answered with a redirect, whi
 // hostAgent is what `mmft-agent fingerprint --json` prints on a host.
 type hostAgent struct {
 	AgentID     string `json:"agent_id"`
+	Workspace   string `json:"workspace"`
 	AgentName   string `json:"agent_name"`
 	Fingerprint string `json:"fingerprint"`
 }
@@ -76,8 +77,8 @@ func readFingerprints(path string) ([]hostAgent, error) {
 	seen := map[string]hostAgent{}
 	var unique []hostAgent
 	for _, a := range all {
-		if !trust.ValidAgentID(a.AgentID) || !trust.ValidName(a.AgentName) || len(a.Fingerprint) != 64 {
-			return nil, errors.New("each entry in the fingerprints file needs agent_id, agent_name, and fingerprint")
+		if !trust.ValidAgentID(a.AgentID) || !trust.ValidName(a.Workspace) || !trust.ValidName(a.AgentName) || len(a.Fingerprint) != 64 {
+			return nil, errors.New("each entry in the fingerprints file needs agent_id, workspace, agent_name, and fingerprint")
 		}
 		if prev, ok := seen[a.AgentID]; ok {
 			if prev != a {
@@ -178,6 +179,21 @@ func (e *statusError) Error() string {
 	return fmt.Sprintf("the orchestrator answered %d: %s", e.code, e.title)
 }
 
+const mismatchReason = "the agent does not match the fingerprint, ID, workspace, or name from its host"
+
+// matchesHost reports whether an agent the orchestrator lists has exactly the
+// keys, ID, workspace, and name collected from its host, with the ID derived
+// from those keys.
+func matchesHost(got listedAgent, want hostAgent) bool {
+	if got.PublicKeys == nil {
+		return false
+	}
+	keys := trust.AgentKeys{Ed25519: got.PublicKeys.Ed25519, MLDSA65: got.PublicKeys.MLDSA65, Recipient: got.PublicKeys.Recipient}
+	fp := keys.Fingerprint()
+	return fp != "" && fp == want.Fingerprint && keys.AgentID() == want.AgentID && got.ID == want.AgentID &&
+		got.Workspace == want.Workspace && got.Name == want.AgentName
+}
+
 // listedAgent is an agent as the orchestrator reports it. Nothing in it is
 // trusted: approval compares it with what was collected from the host.
 type listedAgent struct {
@@ -230,9 +246,10 @@ type approvalReport struct {
 }
 
 // agentApprove signs the identity of each pending agent in the fingerprints
-// file, only if its keys, ID, and name match what was collected from its host,
-// as ADR 0011 and ADR 0018 require. Agents already approved are skipped, so a
-// repeat run changes nothing. It never prompts.
+// file, only if its keys, ID, workspace, and name match what was collected from
+// its host, as ADR 0011 and ADR 0019 require. Agents already approved are
+// skipped only if they match too, so a repeat run changes nothing. It never
+// prompts.
 func agentApprove(args []string, stdout, stderr io.Writer, now func() time.Time) error {
 	fs := flag.NewFlagSet("agent approve", flag.ContinueOnError)
 	api := fs.String("api", "", "host and port of the orchestrator's REST API")
@@ -303,8 +320,14 @@ func agentApprove(args []string, stdout, stderr io.Writer, now func() time.Time)
 			result.Reason = "the orchestrator has no such agent"
 			report.Refused = append(report.Refused, result)
 			continue
-		case got.Status == "approved":
+		case got.Status == "approved" && matchesHost(got, want):
 			report.Skipped = append(report.Skipped, result)
+			continue
+		case got.Status == "approved":
+			// An approved agent that doesn't match its host is never reported as
+			// a safe repeat. See ADR 0019.
+			result.Reason = mismatchReason
+			report.Refused = append(report.Refused, result)
 			continue
 		case got.Status != "pending_approval" || got.PublicKeys == nil:
 			result.Reason = "the agent is " + got.Status
@@ -320,10 +343,11 @@ func agentApprove(args []string, stdout, stderr io.Writer, now func() time.Time)
 			},
 			ExpectedFingerprint: want.Fingerprint,
 			ExpectedID:          want.AgentID,
+			ExpectedWorkspace:   want.Workspace,
 			ExpectedName:        want.AgentName,
 		}, now(), time.Duration(*days)*24*time.Hour)
 		if errors.Is(err, trust.ErrWrongAgent) || errors.Is(err, trust.ErrAgentSharesKey) || errors.Is(err, trust.ErrInvalidIdentity) {
-			result.Reason = "the agent does not match the fingerprint, ID, or name from its host"
+			result.Reason = mismatchReason
 			report.Refused = append(report.Refused, result)
 			continue
 		}

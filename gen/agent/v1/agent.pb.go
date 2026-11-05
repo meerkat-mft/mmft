@@ -98,10 +98,15 @@ type EnrollRequest struct {
 	// PKCS#10 request for the connection certificate.
 	CertificateRequest []byte `protobuf:"bytes,6,opt,name=certificate_request,json=certificateRequest,proto3" json:"certificate_request,omitempty"`
 	// Enrollment request statement signed with both agent keys, which proves the
-	// agent holds them. See ADR 0018.
+	// agent holds them. See ADR 0019.
 	ProofStatement []byte `protobuf:"bytes,7,opt,name=proof_statement,json=proofStatement,proto3" json:"proof_statement,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The agent ID, derived from the keys as ADR 0019 defines. The orchestrator
+	// must store the agent under this ID, and refuses one that doesn't match.
+	AgentId string `protobuf:"bytes,8,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// The workspace the install command named. It must match the token's.
+	Workspace     string `protobuf:"bytes,9,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EnrollRequest) Reset() {
@@ -181,6 +186,20 @@ func (x *EnrollRequest) GetProofStatement() []byte {
 		return x.ProofStatement
 	}
 	return nil
+}
+
+func (x *EnrollRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *EnrollRequest) GetWorkspace() string {
+	if x != nil {
+		return x.Workspace
+	}
+	return ""
 }
 
 type EnrollResponse struct {
@@ -1556,7 +1575,7 @@ var File_mmft_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x19mmft/agent/v1/agent.proto\x12\rmmft.agent.v1\"\xad\x02\n" +
+	"\x19mmft/agent/v1/agent.proto\x12\rmmft.agent.v1\"\xe6\x02\n" +
 	"\rEnrollRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
@@ -1565,7 +1584,9 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\x12mldsa65_public_key\x18\x04 \x01(\fR\x10mldsa65PublicKey\x121\n" +
 	"\x14encryption_recipient\x18\x05 \x01(\tR\x13encryptionRecipient\x12/\n" +
 	"\x13certificate_request\x18\x06 \x01(\fR\x12certificateRequest\x12'\n" +
-	"\x0fproof_statement\x18\a \x01(\fR\x0eproofStatement\"b\n" +
+	"\x0fproof_statement\x18\a \x01(\fR\x0eproofStatement\x12\x19\n" +
+	"\bagent_id\x18\b \x01(\tR\aagentId\x12\x1c\n" +
+	"\tworkspace\x18\t \x01(\tR\tworkspace\"b\n" +
 	"\x0eEnrollResponse\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x125\n" +
 	"\x16connection_certificate\x18\x02 \x01(\fR\x15connectionCertificate\"\x14\n" +

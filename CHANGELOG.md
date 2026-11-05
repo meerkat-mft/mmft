@@ -7,9 +7,10 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - The orchestrator issues one-use enrollment tokens and enrolls agents that prove they hold their keys.
+- An agent's ID is derived from its keys, and its workspace comes from `mmft-agent install --workspace`, so the orchestrator can't choose either. See ADR 0019.
 - `mmft-agent install` enrolls an agent unattended, trusting the orchestrator only through the CA fingerprint in the install command, and `mmft-agent fingerprint` prints the value to compare before approval.
 - `mmft agent token` creates a one-use enrollment token and prints every value `mmft-agent install` needs, as JSON.
-- `mmft agent approve --fingerprints` signs the identity of each pending agent whose fingerprint, ID, and name match the values collected from its host, refuses any other with exit code 4, and skips agents already approved. It never prompts.
+- `mmft agent approve --fingerprints` signs the identity of each pending agent whose fingerprint, ID, workspace, and name match the values collected from its host, and refuses any other with exit code 4. It skips agents already approved only when they match too. It never prompts.
 - `mmft-agent identity` fetches the agent's signed identity and verifies it back to the pinned trust root. It exits with code 5 until the agent is approved.
 - Signed releases: each tag publishes binaries, container images, and SBOMs, signed with Sigstore Cosign. See SECURITY.md for how to verify them.
 
