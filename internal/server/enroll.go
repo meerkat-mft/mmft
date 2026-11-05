@@ -156,27 +156,34 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 	if req.GetToken() == "" || len(req.GetToken()) > maxTokenBytes {
 		return nil, errBadToken
 	}
-	if !trust.ValidName(req.GetAgentName()) || keys.Validate() != nil || len(req.GetCertificateRequest()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "the agent name, keys, or certificate request are invalid")
+	if !trust.ValidName(req.GetAgentName()) || !trust.ValidName(req.GetWorkspace()) || keys.Validate() != nil || len(req.GetCertificateRequest()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "the agent name, workspace, keys, or certificate request are invalid")
 	}
-	if err := trust.CheckEnrollment(req.GetProofStatement(), req.GetToken(), req.GetAgentName(), keys, req.GetCertificateRequest()); err != nil {
+	// The agent ID is derived from the keys, so the orchestrator never chooses
+	// it. See ADR 0019.
+	agentID := keys.AgentID()
+	if req.GetAgentId() != agentID {
+		return nil, status.Error(codes.InvalidArgument, "the agent ID is not the one derived from the keys")
+	}
+	if err := trust.CheckEnrollment(req.GetProofStatement(), req.GetToken(), agentID, req.GetWorkspace(), req.GetAgentName(), keys, req.GetCertificateRequest()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, "the enrollment proof does not match the request")
 	}
 
 	sum := sha256.Sum256([]byte(req.GetToken()))
 	var resp agentv1.EnrollResponse
 	err := pgx.BeginFunc(ctx, e.s.cfg.DB, func(tx pgx.Tx) error {
-		var workspaceID, name string
+		var workspaceID, workspace, name string
 		var expires time.Time
 		var usedBy *string
 		err := tx.QueryRow(ctx, `
-			SELECT workspace_id, agent_name, expires_at, agent_id
-			FROM enrollment_tokens WHERE token_sha256 = $1 FOR UPDATE`, sum[:]).
-			Scan(&workspaceID, &name, &expires, &usedBy)
+			SELECT t.workspace_id, w.name, t.agent_name, t.expires_at, t.agent_id
+			FROM enrollment_tokens t JOIN workspaces w ON w.id = t.workspace_id
+			WHERE t.token_sha256 = $1 FOR UPDATE OF t`, sum[:]).
+			Scan(&workspaceID, &workspace, &name, &expires, &usedBy)
 		// Read the clock only once the row is locked, so a token that expires
 		// while waiting for the lock is refused.
 		now := e.s.cfg.Now()
-		if errors.Is(err, pgx.ErrNoRows) || (err == nil && name != req.GetAgentName()) {
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && (name != req.GetAgentName() || workspace != req.GetWorkspace())) {
 			return errBadToken
 		}
 		if err != nil {
@@ -188,13 +195,12 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 		if !now.Before(expires) {
 			return errBadToken
 		}
-		var agentID string
-		err = tx.QueryRow(ctx, `
-			INSERT INTO agents (workspace_id, name, status) VALUES ($1, $2, 'pending_approval')
-			RETURNING id`, workspaceID, name).Scan(&agentID)
+		_, err = tx.Exec(ctx, `
+			INSERT INTO agents (id, workspace_id, name, status) VALUES ($1, $2, $3, 'pending_approval')`,
+			agentID, workspaceID, name)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
-			return status.Error(codes.AlreadyExists, "an agent with this name already exists")
+			return status.Error(codes.AlreadyExists, "an agent with this name or these keys already exists")
 		}
 		if err != nil {
 			return err

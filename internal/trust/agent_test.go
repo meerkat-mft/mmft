@@ -20,8 +20,7 @@ import (
 )
 
 const (
-	testAgentID = "019a3f2e-7c11-7d3e-9f7b-2c1d4e5f6a7b"
-	oneUse      = "one-use-value-for-tests"
+	oneUse = "one-use-value-for-tests"
 )
 
 type testAgent struct {
@@ -63,6 +62,36 @@ func TestFingerprintCoversEveryKey(t *testing.T) {
 	}
 }
 
+func TestAgentIDComesFromTheKeys(t *testing.T) {
+	a, b := newAgent(t), newAgent(t)
+	id := a.keys.AgentID()
+	if !ValidAgentID(id) || id != a.keys.AgentID() {
+		t.Fatalf("ID %q is not a stable UUID", id)
+	}
+	if id[14] != '8' || !strings.ContainsRune("89ab", rune(id[19])) {
+		t.Fatalf("ID %q is not a version 8 UUID", id)
+	}
+	// Apart from the version digit (12) and the variant digit (16), which
+	// the UUID format sets, the ID is the fingerprint's first 32 hex digits.
+	fp, hexID := a.keys.Fingerprint(), strings.ReplaceAll(id, "-", "")
+	for i := range 32 {
+		if i != 12 && i != 16 && hexID[i] != fp[i] {
+			t.Fatalf("ID %q does not come from fingerprint %s", id, fp)
+		}
+	}
+	if b.keys.AgentID() == id {
+		t.Fatal("two key sets share an ID")
+	}
+	swapped := a.keys
+	swapped.Recipient = b.keys.Recipient
+	if swapped.AgentID() == id {
+		t.Fatal("a swapped recipient keeps the ID")
+	}
+	if (AgentKeys{}).AgentID() != "" {
+		t.Fatal("invalid keys have an ID")
+	}
+}
+
 func TestAgentKeysRejectWeakOrInvalidRecipients(t *testing.T) {
 	a := newAgent(t)
 	classic, err := age.GenerateX25519Identity()
@@ -85,7 +114,7 @@ func TestAgentKeysRejectWeakOrInvalidRecipients(t *testing.T) {
 
 func prove(t *testing.T, a testAgent, csr []byte) []byte {
 	t.Helper()
-	e, err := ProveEnrollment(a.signer, oneUse, "agent-a", a.keys.Recipient, csr)
+	e, err := ProveEnrollment(a.signer, oneUse, "lab", "agent-a", a.keys.Recipient, csr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +126,7 @@ func TestEnrollmentProof(t *testing.T) {
 	a, other := newAgent(t), newAgent(t)
 	csr := []byte("certificate request")
 	proof := prove(t, a, csr)
-	if err := CheckEnrollment(proof, oneUse, "agent-a", a.keys, csr); err != nil {
+	if err := CheckEnrollment(proof, oneUse, a.keys.AgentID(), "lab", "agent-a", a.keys, csr); err != nil {
 		t.Fatal(err)
 	}
 
@@ -106,24 +135,30 @@ func TestEnrollmentProof(t *testing.T) {
 		f(&k)
 		return k
 	}
+	id := a.keys.AgentID()
 	cases := map[string]struct {
-		proof []byte
-		token string
-		name  string
-		keys  AgentKeys
-		csr   []byte
+		proof     []byte
+		token     string
+		id        string
+		workspace string
+		name      string
+		keys      AgentKeys
+		csr       []byte
 	}{
-		"other agent's keys":   {proof, oneUse, "agent-a", other.keys, csr},
-		"swapped ed25519":      {proof, oneUse, "agent-a", swapped(func(k *AgentKeys) { k.Ed25519 = other.keys.Ed25519 }), csr},
-		"swapped recipient":    {proof, oneUse, "agent-a", swapped(func(k *AgentKeys) { k.Recipient = other.keys.Recipient }), csr},
-		"other token":          {proof, "another-token", "agent-a", a.keys, csr},
-		"other name":           {proof, oneUse, "agent-b", a.keys, csr},
-		"other csr":            {proof, oneUse, "agent-a", a.keys, []byte("another request")},
-		"signed by other keys": {prove(t, other, csr), oneUse, "agent-a", a.keys, csr},
-		"garbage":              {[]byte("{}"), oneUse, "agent-a", a.keys, csr},
+		"other agent's keys":   {proof, oneUse, id, "lab", "agent-a", other.keys, csr},
+		"swapped ed25519":      {proof, oneUse, id, "lab", "agent-a", swapped(func(k *AgentKeys) { k.Ed25519 = other.keys.Ed25519 }), csr},
+		"swapped recipient":    {proof, oneUse, id, "lab", "agent-a", swapped(func(k *AgentKeys) { k.Recipient = other.keys.Recipient }), csr},
+		"other token":          {proof, "another-token", id, "lab", "agent-a", a.keys, csr},
+		"other agent ID":       {proof, oneUse, other.keys.AgentID(), "lab", "agent-a", a.keys, csr},
+		"no agent ID":          {proof, oneUse, "", "lab", "agent-a", a.keys, csr},
+		"other workspace":      {proof, oneUse, id, "prod", "agent-a", a.keys, csr},
+		"other name":           {proof, oneUse, id, "lab", "agent-b", a.keys, csr},
+		"other csr":            {proof, oneUse, id, "lab", "agent-a", a.keys, []byte("another request")},
+		"signed by other keys": {prove(t, other, csr), oneUse, id, "lab", "agent-a", a.keys, csr},
+		"garbage":              {[]byte("{}"), oneUse, id, "lab", "agent-a", a.keys, csr},
 	}
 	for name, c := range cases {
-		if err := CheckEnrollment(c.proof, c.token, c.name, c.keys, c.csr); err == nil {
+		if err := CheckEnrollment(c.proof, c.token, c.id, c.workspace, c.name, c.keys, c.csr); err == nil {
 			t.Errorf("%s: proof accepted", name)
 		}
 	}
@@ -134,7 +169,7 @@ func TestEnrollmentProofNeedsTheAgentRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ProveEnrollment(admin, oneUse, "agent-a", newAgent(t).keys.Recipient, nil); !errors.Is(err, statement.ErrRoleNotAllowed) {
+	if _, err := ProveEnrollment(admin, oneUse, "lab", "agent-a", newAgent(t).keys.Recipient, nil); !errors.Is(err, statement.ErrRoleNotAllowed) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -150,8 +185,8 @@ func adminSigner(t *testing.T, l lab) *statement.Signer {
 
 func request(a testAgent) AgentRequest {
 	return AgentRequest{
-		AgentID: testAgentID, Workspace: "lab", AgentName: "agent-a", Keys: a.keys,
-		ExpectedFingerprint: a.keys.Fingerprint(), ExpectedID: testAgentID, ExpectedName: "agent-a",
+		AgentID: a.keys.AgentID(), Workspace: "lab", AgentName: "agent-a", Keys: a.keys,
+		ExpectedFingerprint: a.keys.Fingerprint(), ExpectedID: a.keys.AgentID(), ExpectedWorkspace: "lab", ExpectedName: "agent-a",
 	}
 }
 
@@ -171,13 +206,13 @@ func TestAgentIdentityVerifiesBackToRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claim.AgentID != testAgentID || claim.Workspace != "lab" || claim.AgentName != "agent-a" {
+	if claim.AgentID != a.keys.AgentID() || claim.Workspace != "lab" || claim.AgentName != "agent-a" || claim.EnrollmentFingerprint != a.keys.Fingerprint() {
 		t.Fatalf("claim = %+v", claim)
 	}
 	if claim.Keys().Fingerprint() != a.keys.Fingerprint() || v.Key.Fingerprint() != a.signer.Public().Fingerprint() {
 		t.Fatal("verified keys differ from the agent's")
 	}
-	if v.Role != statement.RoleAgent || v.Owner != testAgentID {
+	if v.Role != statement.RoleAgent || v.Owner != a.keys.AgentID() {
 		t.Fatalf("verifier = %+v", v)
 	}
 }
@@ -190,8 +225,13 @@ func TestCertifyAgentRefusesMismatches(t *testing.T) {
 		"swapped keys":      func(r *AgentRequest) { r.Keys = other.keys },
 		"swapped recipient": func(r *AgentRequest) { r.Keys.Recipient = other.keys.Recipient },
 		"other id":          func(r *AgentRequest) { r.AgentID = "019a3f2e-7c11-7d3e-9f7b-000000000000" },
-		"other name":        func(r *AgentRequest) { r.AgentName = "agent-b" },
-		"no expectation":    func(r *AgentRequest) { r.ExpectedFingerprint = "" },
+		// The orchestrator and host agree, but the ID isn't the keys' own.
+		"id not from keys": func(r *AgentRequest) {
+			r.AgentID, r.ExpectedID = other.keys.AgentID(), other.keys.AgentID()
+		},
+		"other workspace": func(r *AgentRequest) { r.Workspace = "prod" },
+		"other name":      func(r *AgentRequest) { r.AgentName = "agent-b" },
+		"no expectation":  func(r *AgentRequest) { r.ExpectedFingerprint = "" },
 	}
 	for name, change := range cases {
 		req := request(a)
@@ -229,6 +269,7 @@ func TestCertifyAgentChecksItsOwnChain(t *testing.T) {
 	adminEd, _ := adminSigner(t, l).Public().Bytes()
 	shared.Keys.Ed25519 = adminEd
 	shared.ExpectedFingerprint = shared.Keys.Fingerprint()
+	shared.AgentID, shared.ExpectedID = shared.Keys.AgentID(), shared.Keys.AgentID()
 	if _, err := CertifyAgent(adminSigner(t, l), cert, l.rootPub, l.rootPub.Fingerprint(), shared, now, valid); !errors.Is(err, ErrAgentSharesKey) {
 		t.Errorf("shared key: err = %v", err)
 	}
@@ -309,7 +350,7 @@ func TestCheckIdentity(t *testing.T) {
 	if len(id) != 64 {
 		t.Fatalf("id = %q", id)
 	}
-	if claim.AgentID != testAgentID || claim.Keys().Fingerprint() != a.keys.Fingerprint() {
+	if claim.AgentID != a.keys.AgentID() || claim.Keys().Fingerprint() != a.keys.Fingerprint() {
 		t.Fatalf("claim = %+v", claim)
 	}
 	if _, _, err := CheckIdentity(good, now.Add(valid)); !errors.Is(err, ErrExpired) {
@@ -332,5 +373,36 @@ func TestCheckIdentity(t *testing.T) {
 	half, _ := json.Marshal(e)
 	if _, _, err := CheckIdentity(half, now); err == nil {
 		t.Error("an identity with one signature was accepted")
+	}
+}
+
+// A verifier refuses an identity whose ID or enrollment fingerprint doesn't
+// match its keys, even one an administrator really signed.
+func TestVerifyAgentChecksTheIDBinding(t *testing.T) {
+	l, a, other := setup(t), newAgent(t), newAgent(t)
+	var e statement.Envelope
+	if err := json.Unmarshal(identity(t, l, request(a)), &e); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := base64.StdEncoding.DecodeString(e.Payload)
+	for name, change := range map[string]func(*IdentityClaim){
+		"another agent's ID":     func(c *IdentityClaim) { c.AgentID = other.keys.AgentID() },
+		"other enrollment print": func(c *IdentityClaim) { c.EnrollmentFingerprint = other.keys.Fingerprint() },
+		"no enrollment print":    func(c *IdentityClaim) { c.EnrollmentFingerprint = "" },
+	} {
+		var c IdentityClaim
+		if err := json.Unmarshal(payload, &c); err != nil {
+			t.Fatal(err)
+		}
+		change(&c)
+		changed, _ := json.Marshal(c)
+		signed, err := statement.Sign(statement.TypeAgentIdentity, changed, adminSigner(t, l))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(signed)
+		if _, _, err := VerifyAgent(data, l.rootPub.Fingerprint(), now); !errors.Is(err, ErrInvalidIdentity) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

@@ -30,7 +30,7 @@ import (
 const rootPin = "1111111111111111111111111111111111111111111111111111111111111111"
 
 func install(o servertest.Orchestrator, token, name string) Install {
-	return Install{Orchestrator: o.GRPC, Token: token, AgentName: name, CAFingerprint: o.CA.Fingerprint(), RootFingerprint: rootPin}
+	return Install{Orchestrator: o.GRPC, Token: token, Workspace: "lab", AgentName: name, CAFingerprint: o.CA.Fingerprint(), RootFingerprint: rootPin}
 }
 
 func enroll(t *testing.T, dir string, in Install) (State, error) {
@@ -152,11 +152,13 @@ func TestUsedTokenIsRefused(t *testing.T) {
 }
 
 func TestInvalidInstallSettings(t *testing.T) {
-	good := Install{Orchestrator: "orchestrator:7443", Token: "t", AgentName: "agent-a", CAFingerprint: rootPin, RootFingerprint: rootPin}
+	good := Install{Orchestrator: "orchestrator:7443", Token: "t", Workspace: "lab", AgentName: "agent-a", CAFingerprint: rootPin, RootFingerprint: rootPin}
 	for name, change := range map[string]func(*Install){
 		"no port":        func(i *Install) { i.Orchestrator = "orchestrator" },
 		"no token":       func(i *Install) { i.Token = "" },
 		"bad name":       func(i *Install) { i.AgentName = "../a" },
+		"no workspace":   func(i *Install) { i.Workspace = "" },
+		"bad workspace":  func(i *Install) { i.Workspace = "../w" },
 		"short pin":      func(i *Install) { i.CAFingerprint = "abcd" },
 		"upper-case pin": func(i *Install) { i.RootFingerprint = strings.ToUpper(strings.Repeat("ab", 32)) },
 	} {
@@ -223,7 +225,7 @@ func enrollDirectly(t *testing.T, dir string, o servertest.Orchestrator, token, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	proof, err := trust.ProveEnrollment(keys.Signer, token, name, pub.Recipient, csr)
+	proof, err := trust.ProveEnrollment(keys.Signer, token, "lab", name, pub.Recipient, csr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +239,7 @@ func enrollDirectly(t *testing.T, dir string, o servertest.Orchestrator, token, 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resp, err := agentv1.NewEnrollmentServiceClient(conn).Enroll(ctx, &agentv1.EnrollRequest{
-		Token: token, AgentName: name, Ed25519PublicKey: pub.Ed25519, Mldsa65PublicKey: pub.MLDSA65,
+		Token: token, AgentId: pub.AgentID(), Workspace: "lab", AgentName: name, Ed25519PublicKey: pub.Ed25519, Mldsa65PublicKey: pub.MLDSA65,
 		EncryptionRecipient: pub.Recipient, CertificateRequest: csr, ProofStatement: proofBytes,
 	})
 	if err != nil {
@@ -383,7 +385,7 @@ func TestIncompleteStateIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"orchestrator", "ca_fingerprint", "root_fingerprint", "agent_id", "agent_name"} {
+	for _, field := range []string{"orchestrator", "ca_fingerprint", "root_fingerprint", "agent_id", "workspace", "agent_name"} {
 		for name, value := range map[string]any{"missing": nil, "invalid": "../x"} {
 			var m map[string]any
 			if err := json.Unmarshal(good, &m); err != nil {
@@ -486,9 +488,9 @@ func TestVerifyIdentityRequiresThisAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, identity := range map[string][]byte{
-		"other keys":     ap.Sign(t, s.AgentID, "lab", "agent-a", other.Public()),
-		"other agent ID": ap.Sign(t, "019a3f2e-7c11-7d3e-9f7b-000000000000", "lab", "agent-a", s.Keys()),
-		"other name":     ap.Sign(t, s.AgentID, "lab", "agent-b", s.Keys()),
+		"another agent":   ap.Sign(t, other.Public().AgentID(), "lab", "agent-a", other.Public()),
+		"other workspace": ap.Sign(t, s.AgentID, "prod", "agent-a", s.Keys()),
+		"other name":      ap.Sign(t, s.AgentID, "lab", "agent-b", s.Keys()),
 	} {
 		if _, err := VerifyIdentity(s, identity, time.Now()); !errors.Is(err, ErrWrongIdentity) {
 			t.Errorf("%s: err = %v", name, err)
@@ -496,5 +498,41 @@ func TestVerifyIdentityRequiresThisAgent(t *testing.T) {
 	}
 	if _, err := VerifyIdentity(s, ap.Sign(t, s.AgentID, "lab", "agent-a", s.Keys()), time.Now()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An ID that is a valid UUID but not the one derived from the keys is refused,
+// both from the orchestrator and in saved state.
+func TestAgentIDMustComeFromTheKeys(t *testing.T) {
+	keys, err := LoadOrCreateKeys(agentDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const other = "019a3f2e-7c11-7d3e-9f7b-000000000000"
+	if err := checkCertificate(&agentv1.EnrollResponse{AgentId: other}, keys.Connection, keys.Public().AgentID()); !errors.Is(err, ErrBadCertificate) {
+		t.Fatalf("orchestrator's own ID: %v", err)
+	}
+
+	o := servertest.Start(t)
+	dir := agentDir(t)
+	if _, err := enroll(t, dir, install(o, o.Token(t, "lab", "agent-a"), "agent-a")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, StateFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["agent_id"] = other
+	changed, _ := json.Marshal(m)
+	if err := os.WriteFile(path, changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadState(dir); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("saved ID not from the keys: %v", err)
 	}
 }

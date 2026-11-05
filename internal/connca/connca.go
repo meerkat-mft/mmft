@@ -199,7 +199,7 @@ func (a *Authority) ServerCertificate(names []string, now time.Time) (*tls.Certi
 		return nil, err
 	}
 	// The CA certificate follows, so a client holding only its fingerprint can
-	// verify the server. See ADR 0018.
+	// verify the server. See ADR 0019.
 	return &tls.Certificate{Certificate: [][]byte{der, a.cert.Raw}, PrivateKey: key, Leaf: leaf}, nil
 }
 
@@ -258,7 +258,7 @@ var ErrWrongServer = errors.New("connca: server is not signed by the pinned CA")
 // PinnedClient returns a TLS client configuration that trusts a server only if
 // it sends the CA with this fingerprint after a certificate that the CA issued
 // for serverName. The install command carries the fingerprint, so no CA file
-// is needed. See ADR 0018.
+// is needed. See ADR 0019.
 func PinnedClient(caFingerprint, serverName string, now func() time.Time) *tls.Config {
 	return &tls.Config{
 		MinVersion: tls.VersionTLS13,

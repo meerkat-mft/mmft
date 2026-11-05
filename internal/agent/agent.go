@@ -165,6 +165,7 @@ type State struct {
 	CAFingerprint   string `json:"ca_fingerprint"`
 	RootFingerprint string `json:"root_fingerprint"`
 	AgentID         string `json:"agent_id"`
+	Workspace       string `json:"workspace"`
 	AgentName       string `json:"agent_name"`
 	Ed25519         []byte `json:"ed25519"`
 	MLDSA65         []byte `json:"mldsa65"`
@@ -191,7 +192,8 @@ func ReadState(dir string) (State, error) {
 		return State{}, err
 	}
 	var s State
-	if err := decode(data, &s); err != nil || s.Version != formatVersion || s.Fingerprint() == "" || !trust.ValidAgentID(s.AgentID) {
+	if err := decode(data, &s); err != nil || s.Version != formatVersion || s.Fingerprint() == "" ||
+		s.AgentID != s.Keys().AgentID() || !trust.ValidName(s.Workspace) {
 		return State{}, ErrDamaged
 	}
 	if _, err := checkSettings(s.Orchestrator, s.AgentName, s.CAFingerprint, s.RootFingerprint); err != nil {
@@ -211,6 +213,7 @@ type Install struct {
 	// Orchestrator is the host and port of the orchestrator's agent service.
 	Orchestrator    string
 	Token           string
+	Workspace       string
 	AgentName       string
 	CAFingerprint   string
 	RootFingerprint string
@@ -232,7 +235,7 @@ func checkSettings(orchestrator, name, caPin, rootPin string) (host string, err 
 }
 
 func (in Install) check() (host string, err error) {
-	if in.Token == "" {
+	if in.Token == "" || !trust.ValidName(in.Workspace) {
 		return "", ErrInvalidInstall
 	}
 	return checkSettings(in.Orchestrator, in.AgentName, in.CAFingerprint, in.RootFingerprint)
@@ -274,7 +277,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	if err != nil {
 		return State{}, err
 	}
-	proof, err := trust.ProveEnrollment(keys.Signer, in.Token, in.AgentName, pub.Recipient, csr)
+	proof, err := trust.ProveEnrollment(keys.Signer, in.Token, in.Workspace, in.AgentName, pub.Recipient, csr)
 	if err != nil {
 		return State{}, err
 	}
@@ -291,6 +294,8 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	defer func() { _ = conn.Close() }()
 	resp, err := agentv1.NewEnrollmentServiceClient(conn).Enroll(ctx, &agentv1.EnrollRequest{
 		Token:               in.Token,
+		AgentId:             pub.AgentID(),
+		Workspace:           in.Workspace,
 		AgentName:           in.AgentName,
 		Ed25519PublicKey:    pub.Ed25519,
 		Mldsa65PublicKey:    pub.MLDSA65,
@@ -301,7 +306,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	if err != nil {
 		return State{}, err
 	}
-	if err := checkCertificate(resp, keys.Connection); err != nil {
+	if err := checkCertificate(resp, keys.Connection, pub.AgentID()); err != nil {
 		return State{}, err
 	}
 
@@ -320,7 +325,8 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		Orchestrator:    in.Orchestrator,
 		CAFingerprint:   in.CAFingerprint,
 		RootFingerprint: in.RootFingerprint,
-		AgentID:         resp.GetAgentId(),
+		AgentID:         pub.AgentID(),
+		Workspace:       in.Workspace,
 		AgentName:       in.AgentName,
 		Ed25519:         pub.Ed25519,
 		MLDSA65:         pub.MLDSA65,
@@ -345,7 +351,11 @@ func saveFailed(err error) error {
 
 // checkCertificate requires the certificate to hold this agent's connection key
 // and name the agent ID the orchestrator returned.
-func checkCertificate(resp *agentv1.EnrollResponse, key ed25519.PrivateKey) error {
+func checkCertificate(resp *agentv1.EnrollResponse, key ed25519.PrivateKey, agentID string) error {
+	// The ID comes from the agent's own keys, so the orchestrator can't change it.
+	if resp.GetAgentId() != agentID {
+		return fmt.Errorf("%w: wrong agent ID", ErrBadCertificate)
+	}
 	cert, err := x509.ParseCertificate(resp.GetConnectionCertificate())
 	if err != nil {
 		return ErrBadCertificate
@@ -421,7 +431,8 @@ func VerifyIdentity(s State, identity []byte, now time.Time) (trust.IdentityClai
 	if err != nil {
 		return trust.IdentityClaim{}, err
 	}
-	if claim.AgentID != s.AgentID || claim.AgentName != s.AgentName || claim.Keys().Fingerprint() != s.Fingerprint() {
+	if claim.AgentID != s.AgentID || claim.Workspace != s.Workspace || claim.AgentName != s.AgentName ||
+		claim.Keys().Fingerprint() != s.Fingerprint() {
 		return trust.IdentityClaim{}, ErrWrongIdentity
 	}
 	return claim, nil

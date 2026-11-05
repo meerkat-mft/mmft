@@ -59,7 +59,7 @@ token() {
 }
 # install HOST NAME DIR runs `mmft-agent install` with a token already on HOST.
 install() {
-  in_lab "$1" mmft-agent install --dir "$3" --orchestrator orchestrator:7443 --name "$2" \
+  in_lab "$1" mmft-agent install --dir "$3" --orchestrator orchestrator:7443 --workspace lab --name "$2" \
     --token-file "$spool/token" --ca-fingerprint "$ca_fp" --root-fingerprint "$root_fp"
 }
 # approve FILE runs `mmft agent approve` with fingerprints from FILE on this machine.
@@ -111,7 +111,7 @@ token agent-c | field token | put agent-a "$spool/token"
 install agent-a agent-c "$spool/c" >/dev/null
 c_id=$(in_lab agent-a mmft-agent fingerprint --dir "$spool/c" --json | field agent_id)
 a_fp=$(in_lab agent-a mmft-agent fingerprint --dir "$state" --json | field fingerprint)
-printf '{"agent_id":"%s","agent_name":"agent-c","fingerprint":"%s"}\n' "$c_id" "$a_fp" >"$work/changed.json"
+printf '{"agent_id":"%s","workspace":"lab","agent_name":"agent-c","fingerprint":"%s"}\n' "$c_id" "$a_fp" >"$work/changed.json"
 label="a changed fingerprint is refused"
 expect_code 4 approve "$work/changed.json"
 label="the refused agent stays unapproved"

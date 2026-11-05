@@ -33,7 +33,7 @@ func tokenFile(t *testing.T, token string) string {
 }
 
 func installArgs(o servertest.Orchestrator, dir, name, tokenPath string) []string {
-	return []string{"install", "--dir", dir, "--orchestrator", o.GRPC, "--name", name, "--token-file", tokenPath,
+	return []string{"install", "--dir", dir, "--orchestrator", o.GRPC, "--workspace", "lab", "--name", name, "--token-file", tokenPath,
 		"--ca-fingerprint", o.CA.Fingerprint(), "--root-fingerprint", rootPin}
 }
 
@@ -142,7 +142,7 @@ func TestUsageAndFailures(t *testing.T) {
 		t.Errorf("not enrolled: %d %s", code, errOut)
 	}
 	empty := tokenFile(t, "")
-	args := []string{"install", "--dir", dir, "--orchestrator", "localhost:1", "--name", "agent-a", "--token-file", empty,
+	args := []string{"install", "--dir", dir, "--orchestrator", "localhost:1", "--workspace", "lab", "--name", "agent-a", "--token-file", empty,
 		"--ca-fingerprint", rootPin, "--root-fingerprint", rootPin}
 	if code, _, errOut := cli(t, args...); code != exitFailure || !strings.Contains(errOut, "token") {
 		t.Errorf("empty token file: %d %s", code, errOut)

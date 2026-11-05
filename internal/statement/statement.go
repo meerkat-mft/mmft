@@ -83,7 +83,7 @@ const (
 )
 
 // allowedRoles is the signer table from ADR 0012, plus the enrollment request
-// from ADR 0018.
+// from ADR 0019.
 var allowedRoles = map[Type][]Role{
 	TypeRootRollover:        {RoleRoot},
 	TypeAdministratorKey:    {RoleRoot},

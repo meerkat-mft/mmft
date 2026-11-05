@@ -60,7 +60,8 @@ func (h harness) token(t *testing.T, workspace, name string) string {
 	return body["token"]
 }
 
-// newAgent builds a complete, valid enrollment request for a token.
+// newAgent builds a complete, valid enrollment request for a token in the
+// lab workspace.
 func newAgent(t *testing.T, token, name string) *agentv1.EnrollRequest {
 	t.Helper()
 	_, connKey, err := ed25519.GenerateKey(rand.Reader)
@@ -71,11 +72,11 @@ func newAgent(t *testing.T, token, name string) *agentv1.EnrollRequest {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newAgentWithCSR(t, token, name, csr)
+	return newAgentWithCSR(t, token, "lab", name, csr)
 }
 
 // newAgentWithCSR builds a request with a valid proof over any CSR bytes.
-func newAgentWithCSR(t *testing.T, token, name string, csr []byte) *agentv1.EnrollRequest {
+func newAgentWithCSR(t *testing.T, token, workspace, name string, csr []byte) *agentv1.EnrollRequest {
 	t.Helper()
 	signer, err := statement.GenerateSigner(statement.RoleAgent)
 	if err != nil {
@@ -86,14 +87,15 @@ func newAgentWithCSR(t *testing.T, token, name string, csr []byte) *agentv1.Enro
 		t.Fatal(err)
 	}
 	recipient := enc.Recipient().String()
-	proof, err := trust.ProveEnrollment(signer, token, name, recipient, csr)
+	proof, err := trust.ProveEnrollment(signer, token, workspace, name, recipient, csr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	proofBytes, _ := json.Marshal(proof)
 	ed, ml := signer.Public().Bytes()
+	keys := trust.AgentKeys{Ed25519: ed, MLDSA65: ml, Recipient: recipient}
 	return &agentv1.EnrollRequest{
-		Token: token, AgentName: name, Ed25519PublicKey: ed, Mldsa65PublicKey: ml,
+		Token: token, AgentId: keys.AgentID(), Workspace: workspace, AgentName: name, Ed25519PublicKey: ed, Mldsa65PublicKey: ml,
 		EncryptionRecipient: recipient, CertificateRequest: csr, ProofStatement: proofBytes,
 	}
 }
@@ -244,7 +246,7 @@ func TestTokenExpiringDuringLockWaitFails(t *testing.T) {
 		var waiting int
 		if err := h.db.QueryRow(ctx, `
 			SELECT count(*) FROM pg_stat_activity
-			WHERE wait_event_type = 'Lock' AND query LIKE '%FROM enrollment_tokens WHERE token_sha256%FOR UPDATE%'
+			WHERE wait_event_type = 'Lock' AND query LIKE '%FROM enrollment_tokens t JOIN workspaces%FOR UPDATE%'
 				AND pid <> pg_backend_pid()`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
@@ -304,7 +306,7 @@ func TestBadRequestsDoNotUseUpTheToken(t *testing.T) {
 func TestFailureInsideTheTransactionRollsBack(t *testing.T) {
 	h := start(t)
 	token := h.token(t, "lab", "agent-a")
-	if _, err := h.enroll(t, newAgentWithCSR(t, token, "agent-a", []byte("not a certificate request"))); status.Code(err) != codes.InvalidArgument {
+	if _, err := h.enroll(t, newAgentWithCSR(t, token, "lab", "agent-a", []byte("not a certificate request"))); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("malformed CSR: %v", err)
 	}
 
@@ -348,4 +350,50 @@ func TestCreateTokenValidates(t *testing.T) {
 		t.Errorf("existing agent: status %d", code)
 	}
 	h.token(t, "other", "agent-a")
+}
+
+// ADR 0019: the orchestrator never chooses an agent's ID or workspace.
+func TestEnrollUsesTheHostsIDAndWorkspace(t *testing.T) {
+	h := start(t)
+	token := h.token(t, "lab", "agent-a")
+
+	other := newAgent(t, token, "agent-a")
+	wrongID := newAgent(t, token, "agent-a")
+	wrongID.AgentId = other.GetAgentId()
+	if _, err := h.enroll(t, wrongID); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("ID not from the keys: %v", err)
+	}
+	if _, err := h.enroll(t, newAgentWithCSR(t, token, "prod", "agent-a", csrFor(t))); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("workspace other than the token's: %v", err)
+	}
+
+	req := newAgent(t, token, "agent-a")
+	resp, err := h.enroll(t, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetAgentId() != req.GetAgentId() {
+		t.Fatalf("stored as %q, asked for %q", resp.GetAgentId(), req.GetAgentId())
+	}
+
+	// The same keys can't become a second agent under another name.
+	again := newAgentWithCSR(t, h.token(t, "lab", "agent-b"), "lab", "agent-b", csrFor(t))
+	again.Ed25519PublicKey, again.Mldsa65PublicKey, again.EncryptionRecipient = req.GetEd25519PublicKey(), req.GetMldsa65PublicKey(), req.GetEncryptionRecipient()
+	again.AgentId = req.GetAgentId()
+	if _, err := h.enroll(t, again); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("reused keys without their private half: %v", err)
+	}
+}
+
+func csrFor(t *testing.T) []byte {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return csr
 }
