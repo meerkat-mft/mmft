@@ -42,6 +42,46 @@ type agentItem struct {
 	PublicKeys        *publicKeys `json:"public_keys,omitempty"`
 }
 
+// agentSelect reads an agent with its active identity's keys, for scanAgent.
+const agentSelect = `
+		SELECT a.id, a.name, w.name, a.status, i.not_after,
+		       i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient
+		FROM agents a
+		JOIN workspaces w ON w.id = a.workspace_id
+		LEFT JOIN agent_identities i ON i.agent_id = a.id AND i.revoked_at IS NULL`
+
+func scanAgent(row pgx.Row) (agentItem, error) {
+	var item agentItem
+	var ed, ml []byte
+	var recipient *string
+	if err := row.Scan(&item.ID, &item.Name, &item.Workspace, &item.Status, &item.IdentityExpiresAt, &ed, &ml, &recipient); err != nil {
+		return agentItem{}, err
+	}
+	if recipient != nil {
+		item.PublicKeys = &publicKeys{Ed25519: ed, MLDSA65: ml, Recipient: *recipient}
+	}
+	return item, nil
+}
+
+// getAgent returns one agent, in the same form as the listing.
+func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("agent_id")
+	if !trust.ValidAgentID(id) {
+		problem(w, http.StatusNotFound, "No such agent.")
+		return
+	}
+	item, err := scanAgent(s.cfg.DB.QueryRow(r.Context(), agentSelect+` WHERE a.id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		problem(w, http.StatusNotFound, "No such agent.")
+		return
+	}
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not read the agent.")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
 // listAgents returns a page of agents in ID order, optionally with one status.
 // The cursor is the last ID of the previous page.
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
@@ -70,12 +110,7 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-	rows, err := s.cfg.DB.Query(r.Context(), `
-		SELECT a.id, a.name, w.name, a.status, i.not_after,
-		       i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient
-		FROM agents a
-		JOIN workspaces w ON w.id = a.workspace_id
-		LEFT JOIN agent_identities i ON i.agent_id = a.id AND i.revoked_at IS NULL
+	rows, err := s.cfg.DB.Query(r.Context(), agentSelect+`
 		WHERE ($1::text IS NULL OR a.status = $1) AND ($2::uuid IS NULL OR a.id > $2::uuid)
 		ORDER BY a.id
 		LIMIT $3`, agentStatus, cursor, limit+1)
@@ -85,16 +120,11 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	items := []agentItem{}
 	for rows.Next() {
-		var item agentItem
-		var ed, ml []byte
-		var recipient *string
-		if err := rows.Scan(&item.ID, &item.Name, &item.Workspace, &item.Status, &item.IdentityExpiresAt, &ed, &ml, &recipient); err != nil {
+		item, err := scanAgent(rows)
+		if err != nil {
 			rows.Close()
 			problem(w, http.StatusInternalServerError, "Could not list agents.")
 			return
-		}
-		if recipient != nil {
-			item.PublicKeys = &publicKeys{Ed25519: ed, MLDSA65: ml, Recipient: *recipient}
 		}
 		items = append(items, item)
 	}

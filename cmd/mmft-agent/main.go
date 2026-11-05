@@ -1,7 +1,8 @@
 // Command mmft-agent is the Meerkat MFT agent. Every command runs without prompts
 // and has stable exit codes, so deployment tools can run it. Output is JSON,
 // except version and the default fingerprint output, which are plain text for a
-// person comparing fingerprints on the host.
+// person comparing fingerprints on the host, and usage errors. Exit codes are
+// listed in docs/naming.md.
 package main
 
 import (
@@ -47,6 +48,8 @@ const usage = `usage:
                      --ca-fingerprint HEX --root-fingerprint HEX [--dir DIR]
   mmft-agent fingerprint [--dir DIR] [--json]
   mmft-agent identity [--dir DIR]
+
+exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused, 5 waiting for approval
 `
 
 var errUsage = errors.New("incorrect usage")
