@@ -21,4 +21,5 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Security
 
+- The orchestrator bounds what one network peer can hold open: 1024 connections per listener, 32 gRPC streams per connection, idle gRPC connections closed after 5 minutes, and read, write, and idle timeouts on the REST API. Before, a peer needing no credential could hold goroutines and descriptors open indefinitely.
 - On Windows, `mmft` now refuses to create or read private key and passphrase files, because it can't yet check that they are private there. Use Linux, macOS, or WSL for `trust init`, `admin init`, `trust certify-admin`, and other commands that use them.
