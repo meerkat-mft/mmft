@@ -97,7 +97,7 @@ func TestRepeatInstallChangesNothing(t *testing.T) {
 	}
 	keyBefore, _ := os.ReadFile(filepath.Join(dir, KeyFile))
 	again, err := enroll(t, dir, install(o, "a-different-token", "agent-a"))
-	if !errors.Is(err, os.ErrExist) {
+	if !errors.Is(err, ErrAlreadyEnrolled) {
 		t.Fatalf("repeat: %v", err)
 	}
 	keyAfter, _ := os.ReadFile(filepath.Join(dir, KeyFile))
@@ -319,7 +319,7 @@ func TestConcurrentInstallsAgree(t *testing.T) {
 		switch {
 		case r.err == nil:
 			enrolled = append(enrolled, r.s)
-		case errors.Is(r.err, os.ErrExist):
+		case errors.Is(r.err, ErrAlreadyEnrolled):
 			existed = append(existed, r.s)
 		default:
 			t.Fatalf("install: %v", r.err)
