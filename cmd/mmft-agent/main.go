@@ -166,26 +166,33 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 	if err := parse(fs, args, stderr, "orchestrator", "workspace", "name", "token-file", "ca-fingerprint", "root-fingerprint"); err != nil {
 		return err
 	}
-	// A repeat run reports the saved agent before it needs the token, which a
-	// deployment tool may have removed after the first run.
-	if s, err := agent.ReadState(*dir); err == nil {
+	in := agent.Install{
+		Orchestrator:    *orchestrator,
+		Workspace:       *workspace,
+		AgentName:       *name,
+		CAFingerprint:   *caPin,
+		RootFingerprint: *rootPin,
+	}
+	// A safe repeat is reported before the token is read, because a deployment
+	// tool may have removed it after the first run. Exit 3 means the settings
+	// match and the keys and a current certificate are in place.
+	switch s, err := agent.CheckInstalled(*dir, in, now()); {
+	case err == nil:
 		_ = output(stdout, stateJSON(s))
 		return agent.ErrAlreadyEnrolled
+	case errors.Is(err, agent.ErrCertificateExpired), errors.Is(err, agent.ErrMissingCA), errors.Is(err, agent.ErrNotEnrolled):
+		// Enroll, or re-enroll with the same keys, using the token.
+	default:
+		return err
 	}
 	token, err := readToken(*tokenFile)
 	if err != nil {
 		return err
 	}
+	in.Token = token
 	ctx, cancel := context.WithTimeout(context.Background(), enrollTimeout)
 	defer cancel()
-	s, err := agent.Enroll(ctx, *dir, agent.Install{
-		Orchestrator:    *orchestrator,
-		Token:           token,
-		Workspace:       *workspace,
-		AgentName:       *name,
-		CAFingerprint:   *caPin,
-		RootFingerprint: *rootPin,
-	}, now)
+	s, err := agent.Enroll(ctx, *dir, in, now)
 	if errors.Is(err, agent.ErrAlreadyEnrolled) {
 		// Print the existing agent too, so a repeat run still reports it.
 		_ = output(stdout, stateJSON(s))

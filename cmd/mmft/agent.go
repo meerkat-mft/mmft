@@ -444,7 +444,7 @@ func agentToken(args []string, stdout, stderr io.Writer, now func() time.Time) e
 	err = client.do(http.MethodPost, "/agents/enrollment-tokens", body, http.StatusCreated, &created)
 	var se *statusError
 	if errors.As(err, &se) && se.code == http.StatusConflict {
-		return os.ErrExist
+		return errors.New("the agent with this name is revoked, so it can't be enrolled again")
 	}
 	if err != nil {
 		return err
