@@ -47,6 +47,11 @@ type limits struct {
 	maxStreams uint32
 	// connectionIdle closes a gRPC connection with no open stream after this long.
 	connectionIdle time.Duration
+	// connectionAge tells a gRPC peer to reconnect after this long, and
+	// connectionAgeGrace then closes the connection even if a stream is still
+	// open. Idle expiry never fires while a stream is open, so without this a
+	// peer could hold a stream that never sends its request for ever.
+	connectionAge, connectionAgeGrace time.Duration
 	// readTimeout, writeTimeout, and idleTimeout bound one REST request, one
 	// response, and the keep-alive wait between requests.
 	readTimeout, writeTimeout, idleTimeout time.Duration
@@ -56,9 +61,13 @@ var defaultLimits = limits{
 	maxConnections: 1024,
 	maxStreams:     32,
 	connectionIdle: 5 * time.Minute,
-	readTimeout:    30 * time.Second,
-	writeTimeout:   30 * time.Second,
-	idleTimeout:    60 * time.Second,
+	// Agents only make short unary calls today. A future long-lived stream
+	// reconnects once an hour, which gRPC clients do on their own.
+	connectionAge:      time.Hour,
+	connectionAgeGrace: 5 * time.Minute,
+	readTimeout:        30 * time.Second,
+	writeTimeout:       30 * time.Second,
+	idleTimeout:        60 * time.Second,
 }
 
 // Config configures a server.
@@ -99,7 +108,11 @@ func New(cfg Config) (*Server, error) {
 		grpc.Creds(credentials.NewTLS(s.tlsConfig())),
 		grpc.MaxRecvMsgSize(maxMessageBytes),
 		grpc.MaxConcurrentStreams(s.limits.maxStreams),
-		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: s.limits.connectionIdle}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionIdle:     s.limits.connectionIdle,
+			MaxConnectionAge:      s.limits.connectionAge,
+			MaxConnectionAgeGrace: s.limits.connectionAgeGrace,
+		}),
 		grpc.UnaryInterceptor(s.unaryAuth),
 		grpc.StreamInterceptor(s.streamAuth),
 	)

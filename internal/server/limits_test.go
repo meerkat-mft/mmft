@@ -66,12 +66,91 @@ func startWithLimits(t *testing.T, l limits) harness {
 
 func fastLimits() limits {
 	return limits{
-		maxConnections: 1024,
-		maxStreams:     2,
-		connectionIdle: 5 * time.Minute,
-		readTimeout:    300 * time.Millisecond,
-		writeTimeout:   300 * time.Millisecond,
-		idleTimeout:    300 * time.Millisecond,
+		maxConnections:     1024,
+		maxStreams:         2,
+		connectionIdle:     5 * time.Minute,
+		connectionAge:      5 * time.Minute,
+		connectionAgeGrace: 5 * time.Minute,
+		readTimeout:        300 * time.Millisecond,
+		writeTimeout:       300 * time.Millisecond,
+		idleTimeout:        300 * time.Millisecond,
+	}
+}
+
+// openHeaderOnlyStreams speaks raw HTTP/2 so a stream can be opened and left
+// without a body, which the gRPC client library never does. It returns the
+// framer once the server's settings have arrived.
+func openHeaderOnlyStreams(t *testing.T, c *tls.Conn, ids ...uint32) (*http2.Framer, uint32) {
+	t.Helper()
+	if _, err := io.WriteString(c, http2.ClientPreface); err != nil {
+		t.Fatal(err)
+	}
+	fr := http2.NewFramer(c, c)
+	if err := fr.WriteSettings(); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var advertised uint32
+	for advertised == 0 {
+		f, err := fr.ReadFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sf, ok := f.(*http2.SettingsFrame); ok && !sf.IsAck() {
+			if v, ok := sf.Value(http2.SettingMaxConcurrentStreams); ok {
+				advertised = v
+			}
+		}
+	}
+	var buf bytes.Buffer
+	enc := hpack.NewEncoder(&buf)
+	for _, f := range []hpack.HeaderField{
+		{Name: ":method", Value: "POST"},
+		{Name: ":scheme", Value: "https"},
+		{Name: ":path", Value: "/mmft.agent.v1.EnrollmentService/Enroll"},
+		{Name: ":authority", Value: "orchestrator.test"},
+		{Name: "content-type", Value: "application/grpc"},
+		{Name: "te", Value: "trailers"},
+	} {
+		if err := enc.WriteField(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range ids {
+		if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: id, BlockFragment: buf.Bytes(), EndHeaders: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return fr, advertised
+}
+
+// TestGRPCClosesAConnectionHoldingAnUnfinishedRequest: a stream that never
+// sends its request keeps the connection from being idle, so the age bound
+// must end it instead. The server sends GOAWAY at the age and closes the
+// connection after the grace.
+func TestGRPCClosesAConnectionHoldingAnUnfinishedRequest(t *testing.T) {
+	l := fastLimits()
+	l.connectionAge = 200 * time.Millisecond
+	l.connectionAgeGrace = 200 * time.Millisecond
+	h := startWithLimits(t, l)
+	c := h.tlsDial(t, h.grpcAddr, "h2")
+	fr, _ := openHeaderOnlyStreams(t, c, 1)
+	var goaway bool
+	for {
+		f, err := fr.ReadFrame()
+		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				t.Fatal("the server kept the connection with an unfinished request open")
+			}
+			if !goaway {
+				t.Fatalf("connection ended without GOAWAY: %v", err)
+			}
+			return
+		}
+		if _, ok := f.(*http2.GoAwayFrame); ok {
+			goaway = true
+		}
 	}
 }
 
@@ -143,56 +222,19 @@ func TestListenersCapConnections(t *testing.T) {
 	h.tlsDial(t, h.apiAddr)
 }
 
-// TestGRPCCapsStreamsPerConnection speaks raw HTTP/2 so a stream can be opened
-// and left without a body, which the gRPC client library never does.
 func TestGRPCCapsStreamsPerConnection(t *testing.T) {
 	l := fastLimits()
 	h := startWithLimits(t, l)
 	c := h.tlsDial(t, h.grpcAddr, "h2")
-	if _, err := io.WriteString(c, http2.ClientPreface); err != nil {
-		t.Fatal(err)
-	}
-	fr := http2.NewFramer(c, c)
-	if err := fr.WriteSettings(); err != nil {
-		t.Fatal(err)
-	}
-	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
-	var advertised uint32
-	for advertised == 0 {
-		f, err := fr.ReadFrame()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if sf, ok := f.(*http2.SettingsFrame); ok && !sf.IsAck() {
-			if v, ok := sf.Value(http2.SettingMaxConcurrentStreams); ok {
-				advertised = v
-			}
-		}
-	}
-	if advertised != l.maxStreams {
-		t.Fatalf("advertised %d concurrent streams, want %d", advertised, l.maxStreams)
-	}
-
-	var buf bytes.Buffer
-	enc := hpack.NewEncoder(&buf)
-	for _, f := range []hpack.HeaderField{
-		{Name: ":method", Value: "POST"},
-		{Name: ":scheme", Value: "https"},
-		{Name: ":path", Value: "/mmft.agent.v1.EnrollmentService/Enroll"},
-		{Name: ":authority", Value: "orchestrator.test"},
-		{Name: "content-type", Value: "application/grpc"},
-		{Name: "te", Value: "trailers"},
-	} {
-		if err := enc.WriteField(f); err != nil {
-			t.Fatal(err)
-		}
-	}
 	// Open one stream more than allowed, none with a body.
 	last := 2*l.maxStreams + 1
+	var ids []uint32
 	for id := uint32(1); id <= last; id += 2 {
-		if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: id, BlockFragment: buf.Bytes(), EndHeaders: true}); err != nil {
-			t.Fatal(err)
-		}
+		ids = append(ids, id)
+	}
+	fr, advertised := openHeaderOnlyStreams(t, c, ids...)
+	if advertised != l.maxStreams {
+		t.Fatalf("advertised %d concurrent streams, want %d", advertised, l.maxStreams)
 	}
 	for {
 		f, err := fr.ReadFrame()
