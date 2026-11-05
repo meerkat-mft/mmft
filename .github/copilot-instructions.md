@@ -24,6 +24,8 @@ Flag any change that breaks one of these as a blocking issue.
 - GitHub Actions are pinned to full commit hashes.
 - New dependencies are added sparingly, especially in the agent. Any dependency that touches cryptography needs a close look.
 - Database migrations run forward only.
+- Run `scripts/check.sh` before pushing. It runs what CI runs and stops at the first failure. Never pipe a check through `tail`, `grep`, or `head`, which hides its exit code.
+- Prove each security check with a mutation: break the guarded code, show that a test fails, then restore it.
 
 ## What helps most
 
