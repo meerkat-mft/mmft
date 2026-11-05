@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -74,8 +76,29 @@ func TestEnrollSavesKeysAndState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(state), "seed") || strings.Contains(string(state), "AGE-SECRET-KEY") {
-		t.Fatal("the state file holds private keys")
+	// Only public fields are saved, and no private key appears in any form.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(state, &fields); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if got := strings.Join(names, ","); got != "agent_id,agent_name,ca_fingerprint,ed25519,encryption_recipient,mldsa65,orchestrator,root_fingerprint,version,workspace" {
+		t.Fatalf("state fields = %s", got)
+	}
+	edSeed, mlSeed := keys.Signer.Seeds()
+	for name, secret := range map[string]string{
+		"ed25519 seed":        base64.StdEncoding.EncodeToString(edSeed),
+		"ml-dsa seed":         base64.StdEncoding.EncodeToString(mlSeed),
+		"connection seed":     base64.StdEncoding.EncodeToString(keys.Connection.Seed()),
+		"encryption identity": keys.Encryption.String(),
+	} {
+		if strings.Contains(string(state), secret) {
+			t.Fatalf("the state file holds the %s", name)
+		}
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(filepath.Join(dir, KeyFile))
