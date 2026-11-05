@@ -157,7 +157,7 @@ func (a Approver) Sign(t testing.TB, agentID, workspace, name string, keys trust
 	t.Helper()
 	e, err := trust.CertifyAgent(a.Admin, a.Certificate, a.Root.Public(), a.RootFingerprint(), trust.AgentRequest{
 		AgentID: agentID, Workspace: workspace, AgentName: name, Keys: keys,
-		ExpectedFingerprint: keys.Fingerprint(), ExpectedID: agentID, ExpectedName: name,
+		ExpectedFingerprint: keys.Fingerprint(), ExpectedID: agentID, ExpectedWorkspace: workspace, ExpectedName: name,
 	}, time.Now(), time.Hour)
 	if err != nil {
 		t.Fatal(err)

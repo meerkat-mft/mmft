@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func tokenFile(t *testing.T, token string) string {
 }
 
 func installArgs(o servertest.Orchestrator, dir, name, tokenPath string) []string {
-	return []string{"install", "--dir", dir, "--orchestrator", o.GRPC, "--name", name, "--token-file", tokenPath,
+	return []string{"install", "--dir", dir, "--orchestrator", o.GRPC, "--workspace", "lab", "--name", name, "--token-file", tokenPath,
 		"--ca-fingerprint", o.CA.Fingerprint(), "--root-fingerprint", rootPin}
 }
 
@@ -67,7 +68,8 @@ func TestInstallAndFingerprint(t *testing.T) {
 		t.Fatalf("fingerprint = %v, install = %v", got, installed)
 	}
 	code, out, _ = cli(t, "fingerprint", "--dir", dir)
-	if code != exitOK || !strings.Contains(out, installed["fingerprint"]) || !strings.Contains(out, "agent-a") {
+	if code != exitOK || !strings.Contains(out, installed["fingerprint"]) || !strings.Contains(out, "agent-a") ||
+		!strings.Contains(out, "workspace    lab\n") {
 		t.Fatalf("fingerprint text: %d %q", code, out)
 	}
 
@@ -97,6 +99,35 @@ func TestInstallAndFingerprint(t *testing.T) {
 	}
 }
 
+// A save that fails after the orchestrator enrolled the agent must never look
+// like a safe repeat run, and a later run must finish the enrollment.
+func TestFailedSaveIsNotReportedAsEnrolled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no key storage on Windows yet")
+	}
+	o := servertest.Start(t)
+	dir := filepath.Join(t.TempDir(), "agent")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A dangling link reads as missing state, but blocks the create-only write.
+	state := filepath.Join(dir, agent.StateFile)
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), state); err != nil {
+		t.Fatal(err)
+	}
+	token := tokenFile(t, o.Token(t, "lab", "agent-a"))
+	code, out, errOut := cli(t, installArgs(o, dir, "agent-a", token)...)
+	if code != exitFailure || strings.Contains(errOut, "already enrolled") || !strings.Contains(errOut, "run install again") {
+		t.Fatalf("failed save: exit %d, stdout %q, stderr %s", code, out, errOut)
+	}
+	if err := os.Remove(state); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := cli(t, installArgs(o, dir, "agent-a", token)...); code != exitOK {
+		t.Fatalf("retry: %d %s", code, errOut)
+	}
+}
+
 func TestUsageAndFailures(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "agent")
 	if code, _, _ := cli(t); code != exitUsage {
@@ -112,7 +143,7 @@ func TestUsageAndFailures(t *testing.T) {
 		t.Errorf("not enrolled: %d %s", code, errOut)
 	}
 	empty := tokenFile(t, "")
-	args := []string{"install", "--dir", dir, "--orchestrator", "localhost:1", "--name", "agent-a", "--token-file", empty,
+	args := []string{"install", "--dir", dir, "--orchestrator", "localhost:1", "--workspace", "lab", "--name", "agent-a", "--token-file", empty,
 		"--ca-fingerprint", rootPin, "--root-fingerprint", rootPin}
 	if code, _, errOut := cli(t, args...); code != exitFailure || !strings.Contains(errOut, "token") {
 		t.Errorf("empty token file: %d %s", code, errOut)

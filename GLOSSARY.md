@@ -176,6 +176,10 @@ _Avoid_: Join token, invite code
 A digest of an agent's signing keys and encryption recipient, compared with the host before its identity is signed.
 _Avoid_: Key ID, thumbprint
 
+**Agent ID**:
+An agent's unique ID, derived from its agent fingerprint, so that neither the orchestrator nor another host can choose it.
+_Avoid_: Agent UUID, host ID
+
 **Agent allowlist**:
 The locally held list of paths and destinations an agent may use, which the orchestrator cannot change.
 _Avoid_: Agent policy, permissions

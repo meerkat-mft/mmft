@@ -83,7 +83,7 @@ func (k AgentKeys) Validate() error {
 }
 
 // Fingerprint is the value an administrator compares with the host, as defined
-// in ADR 0018. It covers the encryption recipient, so that a swapped recipient
+// in ADR 0019. It covers the encryption recipient, so that a swapped recipient
 // can't be signed. It is empty for invalid keys.
 func (k AgentKeys) Fingerprint() string {
 	if k.Validate() != nil {
@@ -99,6 +99,21 @@ func (k AgentKeys) Fingerprint() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// AgentID is the agent's ID, derived from its fingerprint as ADR 0019
+// defines: the first 16 bytes as a version 8 UUID. Neither the orchestrator
+// nor another host can choose it. It is empty for invalid keys.
+func (k AgentKeys) AgentID() string {
+	fp, err := hex.DecodeString(k.Fingerprint())
+	if err != nil || len(fp) < 16 {
+		return ""
+	}
+	b := fp[:16]
+	b[6] = b[6]&0x0f | 0x80
+	b[8] = b[8]&0x3f | 0x80
+	h := hex.EncodeToString(b)
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 func (k AgentKeys) equal(o AgentKeys) bool {
 	return bytes.Equal(k.Ed25519, o.Ed25519) && bytes.Equal(k.MLDSA65, o.MLDSA65) && k.Recipient == o.Recipient
 }
@@ -107,6 +122,8 @@ func (k AgentKeys) equal(o AgentKeys) bool {
 type enrollmentClaim struct {
 	Version     int    `json:"version"`
 	TokenSHA256 []byte `json:"token_sha256"`
+	AgentID     string `json:"agent_id"`
+	Workspace   string `json:"workspace"`
 	AgentName   string `json:"agent_name"`
 	Ed25519     []byte `json:"ed25519"`
 	MLDSA65     []byte `json:"mldsa65"`
@@ -114,12 +131,14 @@ type enrollmentClaim struct {
 	CSRSHA256   []byte `json:"csr_sha256"`
 }
 
-func newEnrollmentClaim(token, name string, keys AgentKeys, csr []byte) enrollmentClaim {
+func newEnrollmentClaim(token, workspace, name string, keys AgentKeys, csr []byte) enrollmentClaim {
 	tokenSum := sha256.Sum256([]byte(token))
 	csrSum := sha256.Sum256(csr)
 	return enrollmentClaim{
 		Version:     formatVersion,
 		TokenSHA256: tokenSum[:],
+		AgentID:     keys.AgentID(),
+		Workspace:   workspace,
 		AgentName:   name,
 		Ed25519:     keys.Ed25519,
 		MLDSA65:     keys.MLDSA65,
@@ -129,10 +148,11 @@ func newEnrollmentClaim(token, name string, keys AgentKeys, csr []byte) enrollme
 }
 
 // ProveEnrollment signs an enrollment request with the agent's own keys, which
-// proves it holds them. The signer must be the agent's signing key.
-func ProveEnrollment(agent *statement.Signer, token, name, recipient string, csr []byte) (*statement.Envelope, error) {
+// proves it holds them. The signer must be the agent's signing key. The proof
+// binds the agent ID derived from the keys and the workspace from the host.
+func ProveEnrollment(agent *statement.Signer, token, workspace, name, recipient string, csr []byte) (*statement.Envelope, error) {
 	ed, ml := agent.Public().Bytes()
-	payload, err := json.Marshal(newEnrollmentClaim(token, name, AgentKeys{Ed25519: ed, MLDSA65: ml, Recipient: recipient}, csr))
+	payload, err := json.Marshal(newEnrollmentClaim(token, workspace, name, AgentKeys{Ed25519: ed, MLDSA65: ml, Recipient: recipient}, csr))
 	if err != nil {
 		return nil, err
 	}
@@ -140,10 +160,14 @@ func ProveEnrollment(agent *statement.Signer, token, name, recipient string, csr
 }
 
 // CheckEnrollment verifies a proof against the keys in the request itself, and
-// requires every field of the proof to match the request.
-func CheckEnrollment(proof []byte, token, name string, keys AgentKeys, csr []byte) error {
+// requires every field of the proof to match the request. The requested agent
+// ID must be the one derived from the keys.
+func CheckEnrollment(proof []byte, token, agentID, workspace, name string, keys AgentKeys, csr []byte) error {
 	if err := keys.Validate(); err != nil {
 		return err
+	}
+	if agentID == "" || agentID != keys.AgentID() {
+		return ErrInvalidProof
 	}
 	key, _ := keys.Signing()
 	e, err := statement.Parse(proof)
@@ -159,8 +183,9 @@ func CheckEnrollment(proof []byte, token, name string, keys AgentKeys, csr []byt
 	if err := strictJSON(got.Payload, &claim); err != nil {
 		return ErrInvalidProof
 	}
-	want := newEnrollmentClaim(token, name, keys, csr)
+	want := newEnrollmentClaim(token, workspace, name, keys, csr)
 	if claim.Version != want.Version || claim.AgentName != want.AgentName ||
+		claim.AgentID != want.AgentID || claim.Workspace != want.Workspace ||
 		!bytes.Equal(claim.TokenSHA256, want.TokenSHA256) || !bytes.Equal(claim.CSRSHA256, want.CSRSHA256) ||
 		!(AgentKeys{Ed25519: claim.Ed25519, MLDSA65: claim.MLDSA65, Recipient: claim.Recipient}).equal(keys) {
 		return ErrInvalidProof
@@ -170,10 +195,12 @@ func CheckEnrollment(proof []byte, token, name string, keys AgentKeys, csr []byt
 
 // IdentityClaim is the payload of an agent identity statement. It embeds the
 // signer's administrator certificate and the trust root's public key, so it
-// verifies from a pinned root fingerprint alone.
+// verifies from a pinned root fingerprint alone. EnrollmentFingerprint is the
+// fingerprint the agent ID was derived from, as ADR 0019 defines.
 type IdentityClaim struct {
 	Version                  int             `json:"version"`
 	AgentID                  string          `json:"agent_id"`
+	EnrollmentFingerprint    string          `json:"enrollment_fingerprint"`
 	Workspace                string          `json:"workspace"`
 	AgentName                string          `json:"agent_name"`
 	Ed25519                  []byte          `json:"ed25519"`
@@ -201,11 +228,13 @@ type AgentRequest struct {
 	// Expected values come from the host, never from the orchestrator.
 	ExpectedFingerprint string
 	ExpectedID          string
+	ExpectedWorkspace   string
 	ExpectedName        string
 }
 
 // CertifyAgent has an administrator sign an agent identity, only if the agent
-// matches the fingerprint, ID, and name collected from the host. The
+// matches the fingerprint, ID, workspace, and name collected from the host,
+// and its ID is the one derived from its keys. The
 // administrator's certificate must verify against the pinned root and name the
 // signing key.
 func CertifyAgent(admin *statement.Signer, certificate []byte, root statement.PublicKey, pinnedRoot string, req AgentRequest, now time.Time, lifetime time.Duration) (*statement.Envelope, error) {
@@ -226,7 +255,8 @@ func CertifyAgent(admin *statement.Signer, certificate []byte, root statement.Pu
 	}
 	fp := req.Keys.Fingerprint()
 	if fp == "" || req.ExpectedFingerprint == "" || fp != req.ExpectedFingerprint ||
-		req.AgentID != req.ExpectedID || req.AgentName != req.ExpectedName {
+		req.AgentID != req.Keys.AgentID() || req.AgentID != req.ExpectedID ||
+		req.Workspace != req.ExpectedWorkspace || req.AgentName != req.ExpectedName {
 		return nil, ErrWrongAgent
 	}
 	signing, _ := req.Keys.Signing()
@@ -242,6 +272,7 @@ func CertifyAgent(admin *statement.Signer, certificate []byte, root statement.Pu
 	payload, err := json.Marshal(IdentityClaim{
 		Version:                  formatVersion,
 		AgentID:                  req.AgentID,
+		EnrollmentFingerprint:    fp,
 		Workspace:                req.Workspace,
 		AgentName:                req.AgentName,
 		Ed25519:                  req.Keys.Ed25519,
@@ -313,6 +344,12 @@ func verifyAgent(identity []byte, pinnedRoot string, now time.Time) (IdentityCla
 	if claim.Version != formatVersion || !idPattern.MatchString(claim.AgentID) ||
 		!ValidName(claim.Workspace) || !ValidName(claim.AgentName) || !claim.NotAfter.After(claim.NotBefore) ||
 		claim.NotAfter.Sub(claim.NotBefore) > MaxAgentLifetime || claim.Keys().Validate() != nil {
+		return fail(ErrInvalidIdentity)
+	}
+	// The ID must be the one derived from the enrollment fingerprint, and until
+	// key rotation exists that is the fingerprint of these keys. So no signed
+	// identity can pair an agent ID with other keys.
+	if claim.EnrollmentFingerprint != claim.Keys().Fingerprint() || claim.AgentID != claim.Keys().AgentID() {
 		return fail(ErrInvalidIdentity)
 	}
 	signing, _ := claim.Keys().Signing()

@@ -55,6 +55,9 @@ var (
 	ErrUnsupported    = errors.New("agent: private keys can't be stored safely on this platform yet")
 	ErrNotApproved    = errors.New("agent: not approved yet")
 	ErrWrongIdentity  = errors.New("agent: the identity is for another agent or other keys")
+	ErrSaveFailed     = errors.New("agent: saving the enrollment failed")
+	// ErrAlreadyEnrolled is returned only with a valid saved state.
+	ErrAlreadyEnrolled = errors.New("agent: already enrolled")
 )
 
 type keyFile struct {
@@ -162,6 +165,7 @@ type State struct {
 	CAFingerprint   string `json:"ca_fingerprint"`
 	RootFingerprint string `json:"root_fingerprint"`
 	AgentID         string `json:"agent_id"`
+	Workspace       string `json:"workspace"`
 	AgentName       string `json:"agent_name"`
 	Ed25519         []byte `json:"ed25519"`
 	MLDSA65         []byte `json:"mldsa65"`
@@ -188,7 +192,8 @@ func ReadState(dir string) (State, error) {
 		return State{}, err
 	}
 	var s State
-	if err := decode(data, &s); err != nil || s.Version != formatVersion || s.Fingerprint() == "" || !trust.ValidAgentID(s.AgentID) {
+	if err := decode(data, &s); err != nil || s.Version != formatVersion || s.Fingerprint() == "" ||
+		s.AgentID != s.Keys().AgentID() || !trust.ValidName(s.Workspace) {
 		return State{}, ErrDamaged
 	}
 	if _, err := checkSettings(s.Orchestrator, s.AgentName, s.CAFingerprint, s.RootFingerprint); err != nil {
@@ -208,6 +213,7 @@ type Install struct {
 	// Orchestrator is the host and port of the orchestrator's agent service.
 	Orchestrator    string
 	Token           string
+	Workspace       string
 	AgentName       string
 	CAFingerprint   string
 	RootFingerprint string
@@ -229,7 +235,7 @@ func checkSettings(orchestrator, name, caPin, rootPin string) (host string, err 
 }
 
 func (in Install) check() (host string, err error) {
-	if in.Token == "" {
+	if in.Token == "" || !trust.ValidName(in.Workspace) {
 		return "", ErrInvalidInstall
 	}
 	return checkSettings(in.Orchestrator, in.AgentName, in.CAFingerprint, in.RootFingerprint)
@@ -237,8 +243,8 @@ func (in Install) check() (host string, err error) {
 
 // Enroll generates the agent's keys, or reuses keys from an earlier attempt,
 // and enrolls with the orchestrator, trusting it only through the pinned CA
-// fingerprint. It returns os.ErrExist with the saved state if the agent is
-// already enrolled, so a repeated install changes nothing. If the response was
+// fingerprint. It returns ErrAlreadyEnrolled with the saved state if the agent
+// is already enrolled, so a repeated install changes nothing. If the response was
 // lost, or saving it failed, a retry with the same token and the kept keys
 // gets the same agent. Installs into one directory run one at a time.
 func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (State, error) {
@@ -258,7 +264,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	}
 	defer unlock()
 	if s, err := ReadState(dir); err == nil {
-		return s, os.ErrExist
+		return s, ErrAlreadyEnrolled
 	} else if !errors.Is(err, ErrNotEnrolled) {
 		return State{}, err
 	}
@@ -271,7 +277,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	if err != nil {
 		return State{}, err
 	}
-	proof, err := trust.ProveEnrollment(keys.Signer, in.Token, in.AgentName, pub.Recipient, csr)
+	proof, err := trust.ProveEnrollment(keys.Signer, in.Token, in.Workspace, in.AgentName, pub.Recipient, csr)
 	if err != nil {
 		return State{}, err
 	}
@@ -288,6 +294,8 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	defer func() { _ = conn.Close() }()
 	resp, err := agentv1.NewEnrollmentServiceClient(conn).Enroll(ctx, &agentv1.EnrollRequest{
 		Token:               in.Token,
+		AgentId:             pub.AgentID(),
+		Workspace:           in.Workspace,
 		AgentName:           in.AgentName,
 		Ed25519PublicKey:    pub.Ed25519,
 		Mldsa65PublicKey:    pub.MLDSA65,
@@ -298,7 +306,7 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	if err != nil {
 		return State{}, err
 	}
-	if err := checkCertificate(resp, keys.Connection); err != nil {
+	if err := checkCertificate(resp, keys.Connection, pub.AgentID()); err != nil {
 		return State{}, err
 	}
 
@@ -306,18 +314,19 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 	// finished enrollment. A leftover certificate from a failed attempt goes.
 	certPath := filepath.Join(dir, CertFile)
 	if err := os.Remove(certPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return State{}, err
+		return State{}, saveFailed(err)
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: resp.GetConnectionCertificate()})
 	if err := trust.WriteNew(certPath, certPEM, 0o644); err != nil {
-		return State{}, err
+		return State{}, saveFailed(err)
 	}
 	s := State{
 		Version:         formatVersion,
 		Orchestrator:    in.Orchestrator,
 		CAFingerprint:   in.CAFingerprint,
 		RootFingerprint: in.RootFingerprint,
-		AgentID:         resp.GetAgentId(),
+		AgentID:         pub.AgentID(),
+		Workspace:       in.Workspace,
 		AgentName:       in.AgentName,
 		Ed25519:         pub.Ed25519,
 		MLDSA65:         pub.MLDSA65,
@@ -328,14 +337,25 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 	if err := trust.WriteNew(filepath.Join(dir, StateFile), append(data, '\n'), 0o644); err != nil {
-		return State{}, err
+		return State{}, saveFailed(err)
 	}
 	return s, nil
 }
 
+// saveFailed reports a failure to save an enrollment the orchestrator already
+// recorded. It never matches os.ErrExist, so an existing file in the way can't
+// pass for an earlier enrollment. A retry with the same token completes it.
+func saveFailed(err error) error {
+	return fmt.Errorf("%w, so run install again: %s", ErrSaveFailed, err.Error())
+}
+
 // checkCertificate requires the certificate to hold this agent's connection key
 // and name the agent ID the orchestrator returned.
-func checkCertificate(resp *agentv1.EnrollResponse, key ed25519.PrivateKey) error {
+func checkCertificate(resp *agentv1.EnrollResponse, key ed25519.PrivateKey, agentID string) error {
+	// The ID comes from the agent's own keys, so the orchestrator can't change it.
+	if resp.GetAgentId() != agentID {
+		return fmt.Errorf("%w: wrong agent ID", ErrBadCertificate)
+	}
 	cert, err := x509.ParseCertificate(resp.GetConnectionCertificate())
 	if err != nil {
 		return ErrBadCertificate
@@ -411,7 +431,8 @@ func VerifyIdentity(s State, identity []byte, now time.Time) (trust.IdentityClai
 	if err != nil {
 		return trust.IdentityClaim{}, err
 	}
-	if claim.AgentID != s.AgentID || claim.AgentName != s.AgentName || claim.Keys().Fingerprint() != s.Fingerprint() {
+	if claim.AgentID != s.AgentID || claim.Workspace != s.Workspace || claim.AgentName != s.AgentName ||
+		claim.Keys().Fingerprint() != s.Fingerprint() {
 		return trust.IdentityClaim{}, ErrWrongIdentity
 	}
 	return claim, nil

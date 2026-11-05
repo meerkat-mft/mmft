@@ -7,9 +7,12 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,7 +90,7 @@ func (a approver) sign(t *testing.T, id, workspace, name string, keys trust.Agen
 	t.Helper()
 	e, err := trust.CertifyAgent(a.admin, a.cert, a.root.Public(), a.root.Public().Fingerprint(), trust.AgentRequest{
 		AgentID: id, Workspace: workspace, AgentName: name, Keys: keys,
-		ExpectedFingerprint: keys.Fingerprint(), ExpectedID: id, ExpectedName: name,
+		ExpectedFingerprint: keys.Fingerprint(), ExpectedID: id, ExpectedWorkspace: workspace, ExpectedName: name,
 	}, time.Now(), time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +107,29 @@ type enrolled struct {
 
 // enrollAgent enrolls an agent and keeps its connection key, so it can call
 // the agent service.
+// signForKeys signs an identity naming id but holding keys, which CertifyAgent
+// would refuse. It stands for an administrator key used outside the CLI.
+func (a approver) signForKeys(t *testing.T, id string, keys, idKeys trust.AgentKeys) []byte {
+	t.Helper()
+	var e statement.Envelope
+	if err := json.Unmarshal(a.sign(t, id, "lab", "agent-a", idKeys), &e); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := base64.StdEncoding.DecodeString(e.Payload)
+	var c trust.IdentityClaim
+	if err := json.Unmarshal(payload, &c); err != nil {
+		t.Fatal(err)
+	}
+	c.Ed25519, c.MLDSA65, c.Recipient = keys.Ed25519, keys.MLDSA65, keys.Recipient
+	changed, _ := json.Marshal(c)
+	signed, err := statement.Sign(statement.TypeAgentIdentity, changed, a.admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(signed)
+	return data
+}
+
 func (h harness) enrollAgent(t *testing.T, workspace, name string) enrolled {
 	t.Helper()
 	_, connKey, err := ed25519.GenerateKey(rand.Reader)
@@ -114,7 +140,7 @@ func (h harness) enrollAgent(t *testing.T, workspace, name string) enrolled {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := newAgentWithCSR(t, h.token(t, workspace, name), name, csr)
+	req := newAgentWithCSR(t, h.token(t, workspace, name), workspace, name, csr)
 	resp, err := h.enroll(t, req)
 	if err != nil {
 		t.Fatal(err)
@@ -158,11 +184,13 @@ func TestListAgentsPages(t *testing.T) {
 	for _, name := range []string{"agent-a", "agent-b", "agent-c"} {
 		h.enrollAgent(t, "lab", name)
 	}
-	var names []string
+	// IDs come from the keys, so the order is by ID, not by enrollment.
+	var ids, names []string
 	query := "?limit=2"
 	for range 3 {
 		page := h.list(t, query)
 		for _, item := range page.Items {
+			ids = append(ids, item.ID)
 			names = append(names, item.Name)
 		}
 		if page.NextCursor == "" {
@@ -170,8 +198,9 @@ func TestListAgentsPages(t *testing.T) {
 		}
 		query = "?limit=2&cursor=" + page.NextCursor
 	}
-	if len(names) != 3 || names[0] != "agent-a" || names[2] != "agent-c" {
-		t.Fatalf("names = %v", names)
+	sort.Strings(names)
+	if len(ids) != 3 || !sort.StringsAreSorted(ids) || strings.Join(names, ",") != "agent-a,agent-b,agent-c" {
+		t.Fatalf("ids = %v, names = %v", ids, names)
 	}
 	for _, q := range []string{"?status=online", "?limit=0", "?limit=201", "?cursor=nope"} {
 		if code, _ := h.do(t, http.MethodGet, "/api/v1/agents"+q, nil); code != http.StatusBadRequest {
@@ -228,17 +257,20 @@ func TestIdentityMustMatchTheAgent(t *testing.T) {
 	ap := newApprover(t)
 	a := h.enrollAgent(t, "lab", "agent-a")
 	b := h.enrollAgent(t, "lab", "agent-b")
+	// Keys that never enrolled, so their own agent ID is unknown.
+	strangerReq := newAgent(t, "unused", "agent-a")
+	stranger := trust.AgentKeys{Ed25519: strangerReq.GetEd25519PublicKey(), MLDSA65: strangerReq.GetMldsa65PublicKey(), Recipient: strangerReq.GetEncryptionRecipient()}
 	path := "/api/v1/agents/" + a.id + "/identity"
 	cases := map[string]struct {
 		path     string
 		identity []byte
 		want     int
 	}{
-		"other agent's keys": {path, ap.sign(t, a.id, "lab", "agent-a", b.keys), http.StatusBadRequest},
+		"other agent's keys": {path, ap.signForKeys(t, a.id, b.keys, a.keys), http.StatusBadRequest},
 		"other workspace":    {path, ap.sign(t, a.id, "other", "agent-a", a.keys), http.StatusBadRequest},
 		"other name":         {path, ap.sign(t, a.id, "lab", "agent-x", a.keys), http.StatusBadRequest},
 		"other agent's path": {"/api/v1/agents/" + b.id + "/identity", ap.sign(t, a.id, "lab", "agent-a", a.keys), http.StatusBadRequest},
-		"unknown agent":      {"/api/v1/agents/" + agentID + "/identity", ap.sign(t, agentID, "lab", "agent-a", a.keys), http.StatusNotFound},
+		"unknown agent":      {"/api/v1/agents/" + stranger.AgentID() + "/identity", ap.sign(t, stranger.AgentID(), "lab", "agent-a", stranger), http.StatusNotFound},
 		"not a statement":    {path, []byte(`{"payload":"x"}`), http.StatusBadRequest},
 		"malformed agent ID": {"/api/v1/agents/nope/identity", ap.sign(t, a.id, "lab", "agent-a", a.keys), http.StatusNotFound},
 	}
@@ -265,5 +297,33 @@ func TestRevokedAgentGetsNoIdentity(t *testing.T) {
 	identity := newApprover(t).sign(t, a.id, "lab", "agent-a", a.keys)
 	if code, _ := h.do(t, http.MethodPut, "/api/v1/agents/"+a.id+"/identity", identity); code != http.StatusConflict {
 		t.Fatalf("code = %d", code)
+	}
+}
+
+func TestGetAgentMatchesTheListing(t *testing.T) {
+	h := start(t)
+	a := h.enrollAgent(t, "lab", "agent-a")
+	code, data := h.do(t, http.MethodGet, "/api/v1/agents/"+a.id, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get: %d %s", code, data)
+	}
+	var got agentItem
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	listed := h.list(t, "").Items[0]
+	if got.ID != listed.ID || got.Name != "agent-a" || got.Workspace != "lab" || got.Status != "pending_approval" ||
+		got.PublicKeys == nil || listed.PublicKeys == nil || !bytes.Equal(got.PublicKeys.MLDSA65, listed.PublicKeys.MLDSA65) {
+		t.Fatalf("get %+v, listed %+v", got, listed)
+	}
+	for _, path := range []string{"/api/v1/agents/" + a.keys.AgentID()[:8], "/api/v1/agents/019a3f2e-7c11-7d3e-9f7b-000000000000", "/api/v1/nothing-here"} {
+		code, data := h.do(t, http.MethodGet, path, nil)
+		var p struct {
+			Title  string `json:"title"`
+			Status int    `json:"status"`
+		}
+		if code != http.StatusNotFound || json.Unmarshal(data, &p) != nil || p.Status != http.StatusNotFound || p.Title == "" {
+			t.Errorf("%s: %d %s", path, code, data)
+		}
 	}
 }

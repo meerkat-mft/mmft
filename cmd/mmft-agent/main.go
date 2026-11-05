@@ -1,7 +1,8 @@
 // Command mmft-agent is the Meerkat MFT agent. Every command runs without prompts
 // and has stable exit codes, so deployment tools can run it. Output is JSON,
 // except version and the default fingerprint output, which are plain text for a
-// person comparing fingerprints on the host.
+// person comparing fingerprints on the host, and usage errors. Exit codes are
+// listed in docs/naming.md.
 package main
 
 import (
@@ -43,10 +44,12 @@ const (
 
 const usage = `usage:
   mmft-agent version
-  mmft-agent install --orchestrator HOST:PORT --name NAME --token-file FILE
+  mmft-agent install --orchestrator HOST:PORT --workspace NAME --name NAME --token-file FILE
                      --ca-fingerprint HEX --root-fingerprint HEX [--dir DIR]
   mmft-agent fingerprint [--dir DIR] [--json]
   mmft-agent identity [--dir DIR]
+
+exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused, 5 waiting for approval
 `
 
 var errUsage = errors.New("incorrect usage")
@@ -63,7 +66,7 @@ func run(args []string, stdout, stderr io.Writer, now func() time.Time) int {
 	case errors.Is(err, errUsage):
 		_, _ = io.WriteString(stderr, usage)
 		return exitUsage
-	case errors.Is(err, os.ErrExist):
+	case errors.Is(err, agent.ErrAlreadyEnrolled):
 		_ = output(stderr, map[string]string{"error": "already enrolled"})
 		return exitExists
 	case errors.Is(err, agent.ErrNotApproved):
@@ -145,6 +148,7 @@ func readToken(path string) (string, error) {
 func stateJSON(s agent.State) map[string]string {
 	return map[string]string{
 		"agent_id":    s.AgentID,
+		"workspace":   s.Workspace,
 		"agent_name":  s.AgentName,
 		"fingerprint": s.Fingerprint(),
 	}
@@ -154,18 +158,19 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	dir := fs.String("dir", defaultDir, "directory for the agent's keys and state")
 	orchestrator := fs.String("orchestrator", "", "host and port of the orchestrator's agent service")
+	workspace := fs.String("workspace", "", "workspace the token was created for")
 	name := fs.String("name", "", "agent name the token was created for")
 	tokenFile := fs.String("token-file", "", "file holding the enrollment token")
 	caPin := fs.String("ca-fingerprint", "", "connection CA fingerprint from the install command")
 	rootPin := fs.String("root-fingerprint", "", "trust root fingerprint from the install command")
-	if err := parse(fs, args, stderr, "orchestrator", "name", "token-file", "ca-fingerprint", "root-fingerprint"); err != nil {
+	if err := parse(fs, args, stderr, "orchestrator", "workspace", "name", "token-file", "ca-fingerprint", "root-fingerprint"); err != nil {
 		return err
 	}
 	// A repeat run reports the saved agent before it needs the token, which a
 	// deployment tool may have removed after the first run.
 	if s, err := agent.ReadState(*dir); err == nil {
 		_ = output(stdout, stateJSON(s))
-		return os.ErrExist
+		return agent.ErrAlreadyEnrolled
 	}
 	token, err := readToken(*tokenFile)
 	if err != nil {
@@ -176,11 +181,12 @@ func install(args []string, stdout, stderr io.Writer, now func() time.Time) erro
 	s, err := agent.Enroll(ctx, *dir, agent.Install{
 		Orchestrator:    *orchestrator,
 		Token:           token,
+		Workspace:       *workspace,
 		AgentName:       *name,
 		CAFingerprint:   *caPin,
 		RootFingerprint: *rootPin,
 	}, now)
-	if errors.Is(err, os.ErrExist) {
+	if errors.Is(err, agent.ErrAlreadyEnrolled) {
 		// Print the existing agent too, so a repeat run still reports it.
 		_ = output(stdout, stateJSON(s))
 		return err
@@ -205,7 +211,7 @@ func fingerprint(args []string, stdout, stderr io.Writer) error {
 	if *asJSON {
 		return output(stdout, stateJSON(s))
 	}
-	_, err = fmt.Fprintf(stdout, "agent_id     %s\nagent_name   %s\nfingerprint  %s\n", s.AgentID, s.AgentName, s.Fingerprint())
+	_, err = fmt.Fprintf(stdout, "agent_id     %s\nworkspace    %s\nagent_name   %s\nfingerprint  %s\n", s.AgentID, s.Workspace, s.AgentName, s.Fingerprint())
 	return err
 }
 
