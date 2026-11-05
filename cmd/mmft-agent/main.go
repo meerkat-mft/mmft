@@ -208,7 +208,7 @@ func fingerprint(args []string, stdout, stderr io.Writer) error {
 	if *asJSON {
 		return output(stdout, stateJSON(s))
 	}
-	_, err = fmt.Fprintf(stdout, "agent_id     %s\nagent_name   %s\nfingerprint  %s\n", s.AgentID, s.AgentName, s.Fingerprint())
+	_, err = fmt.Fprintf(stdout, "agent_id     %s\nworkspace    %s\nagent_name   %s\nfingerprint  %s\n", s.AgentID, s.Workspace, s.AgentName, s.Fingerprint())
 	return err
 }
 

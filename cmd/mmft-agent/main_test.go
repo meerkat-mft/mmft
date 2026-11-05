@@ -68,7 +68,8 @@ func TestInstallAndFingerprint(t *testing.T) {
 		t.Fatalf("fingerprint = %v, install = %v", got, installed)
 	}
 	code, out, _ = cli(t, "fingerprint", "--dir", dir)
-	if code != exitOK || !strings.Contains(out, installed["fingerprint"]) || !strings.Contains(out, "agent-a") {
+	if code != exitOK || !strings.Contains(out, installed["fingerprint"]) || !strings.Contains(out, "agent-a") ||
+		!strings.Contains(out, "workspace    lab\n") {
 		t.Fatalf("fingerprint text: %d %q", code, out)
 	}
 

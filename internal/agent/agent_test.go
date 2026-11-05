@@ -508,8 +508,26 @@ func TestAgentIDMustComeFromTheKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A valid certificate for this agent's connection key, naming an ID the
+	// orchestrator chose. Only the derived-ID check can refuse it.
 	const other = "019a3f2e-7c11-7d3e-9f7b-000000000000"
-	if err := checkCertificate(&agentv1.EnrollResponse{AgentId: other}, keys.Connection, keys.Public().AgentID()); !errors.Is(err, ErrBadCertificate) {
+	ca, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, keys.Connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := ca.SignAgent(csr, other, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &agentv1.EnrollResponse{AgentId: other, ConnectionCertificate: der}
+	if err := checkCertificate(resp, keys.Connection, other); err != nil {
+		t.Fatalf("the certificate itself must be valid: %v", err)
+	}
+	if err := checkCertificate(resp, keys.Connection, keys.Public().AgentID()); !errors.Is(err, ErrBadCertificate) {
 		t.Fatalf("orchestrator's own ID: %v", err)
 	}
 
