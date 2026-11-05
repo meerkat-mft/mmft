@@ -38,10 +38,22 @@ docker compose up --build --detach --wait --wait-timeout 120
 in_lab orchestrator mmft-orchestrator migrate >/dev/null
 ca_fp=$(in_lab orchestrator mmft-orchestrator ca init | field ca_fingerprint)
 docker compose exec -d -T orchestrator mmft-orchestrator serve
+# Both the agent service (7443) and the API (7444) must answer before anything
+# depends on them, so a slow start fails here with a clear reason.
+echo "Waiting for the orchestrator to listen on 7443 and 7444..."
+ready=no
 for _ in $(seq 1 30); do
-  in_lab orchestrator nc -z localhost 7444 2>/dev/null && break
+  if in_lab orchestrator nc -z localhost 7443 2>/dev/null && in_lab orchestrator nc -z localhost 7444 2>/dev/null; then
+    ready=yes
+    break
+  fi
   sleep 1
 done
+if [ "$ready" != yes ]; then
+  echo "FAIL: the orchestrator did not start listening within 30 seconds"
+  exit 1
+fi
+echo "The orchestrator is ready."
 
 # The admin machine: trust root, administrator key, and its certificate.
 printf '%s' "$passphrase" | put admin "$admin/passphrase"
@@ -80,8 +92,10 @@ for host in agent-a agent-b; do
   expect_code 0 install "$host" "$host" "$state"
   in_lab "$host" mmft-agent fingerprint --dir "$state" --json >>"$work/fingerprints.json"
 done
-label="agents wait for approval"
-expect_code 5 in_lab agent-a mmft-agent identity --dir "$state"
+for host in agent-a agent-b; do
+  label="$host waits for approval"
+  expect_code 5 in_lab "$host" mmft-agent identity --dir "$state"
+done
 label="both agents are approved with the collected fingerprints"
 expect_code 0 approve "$work/fingerprints.json"
 for host in agent-a agent-b; do
