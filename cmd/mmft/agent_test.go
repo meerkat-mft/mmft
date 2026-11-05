@@ -209,9 +209,10 @@ func TestTokenPrintsWhatTheInstallNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install with the printed values: %v", err)
 	}
-	// The agent exists now, which a repeat run reports as a safe repeat.
-	if code, _ := a.token(t, "agent-a"); code != exitExists {
-		t.Fatalf("existing agent: %d", code)
+	// A token for the existing agent re-enrolls it with its own keys, for
+	// example after its first token was lost.
+	if code, out := a.token(t, "agent-a"); code != exitOK || out["token"] == "" {
+		t.Fatalf("existing agent: %d %v", code, out)
 	}
 }
 

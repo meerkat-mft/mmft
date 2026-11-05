@@ -40,7 +40,8 @@ type tokenRequest struct {
 }
 
 // createToken stores a new one-use token as a hash and returns it once. A
-// workspace is created on first use, until workspaces get their own API.
+// workspace is created on first use, until workspaces get their own API. A
+// token may name an existing agent, which then re-enrolls with its own keys.
 func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	var req tokenRequest
 	if err := decodeStrict(r.Body, &req); err != nil || !trust.ValidName(req.AgentName) || !trust.ValidName(req.Workspace) {
@@ -65,14 +66,18 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		var exists bool
-		if err := tx.QueryRow(r.Context(),
-			`SELECT EXISTS (SELECT 1 FROM agents WHERE workspace_id = $1 AND name = $2)`,
-			workspaceID, req.AgentName).Scan(&exists); err != nil {
+		// A token for an existing agent re-enrolls it with its own keys, so a
+		// lost token or an expired certificate can be recovered. A revoked agent
+		// can't come back this way.
+		var revoked bool
+		err = tx.QueryRow(r.Context(),
+			`SELECT status = 'revoked' FROM agents WHERE workspace_id = $1 AND name = $2`,
+			workspaceID, req.AgentName).Scan(&revoked)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if exists {
-			return errAgentExists
+		if revoked {
+			return errAgentRevoked
 		}
 		_, err = tx.Exec(r.Context(), `
 			INSERT INTO enrollment_tokens (token_sha256, workspace_id, agent_name, expires_at)
@@ -80,16 +85,14 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	switch {
-	case errors.Is(err, errAgentExists):
-		problem(w, http.StatusConflict, "An agent with this name already exists in the workspace.")
+	case errors.Is(err, errAgentRevoked):
+		problem(w, http.StatusConflict, "The agent with this name is revoked.")
 	case err != nil:
 		problem(w, http.StatusInternalServerError, "Could not create a token.")
 	default:
 		writeJSON(w, http.StatusCreated, map[string]string{"token": token, "expires_at": expires.Format(time.RFC3339)})
 	}
 }
-
-var errAgentExists = errors.New("agent exists")
 
 // decodeStrict reads one bounded JSON object and rejects unknown fields.
 func decodeStrict(body io.Reader, v any) error {
@@ -116,23 +119,25 @@ type enrollment struct {
 	s *Server
 }
 
-// repeat answers a retry by the agent that already used this token, for example
-// after its first response was lost. The proof showed the caller holds the
-// keys, so only the same keys get a new certificate for the same agent, and
+// reissue gives an existing agent a new connection certificate, for a retry
+// after a lost response or a re-enrollment with a new token. The proof showed
+// the caller holds the keys, so only the agent's current keys qualify, and
 // only while neither the agent nor those keys are revoked. Anyone else is
 // refused as for any used token.
-func (e enrollment) repeat(ctx context.Context, tx pgx.Tx, agentID string, keys trust.AgentKeys, csr []byte, now time.Time, resp *agentv1.EnrollResponse) error {
+func (e enrollment) reissue(ctx context.Context, tx pgx.Tx, agentID string, keys trust.AgentKeys, csr []byte, now time.Time, resp *agentv1.EnrollResponse) error {
 	var agentStatus, recipient string
 	var ed, ml []byte
-	var identityRevoked bool
 	err := tx.QueryRow(ctx, `
-		SELECT a.status, i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient, i.revoked_at IS NOT NULL
+		SELECT a.status, i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient
 		FROM agents a JOIN agent_identities i ON i.agent_id = a.id
-		WHERE a.id = $1 ORDER BY i.id LIMIT 1`, agentID).Scan(&agentStatus, &ed, &ml, &recipient, &identityRevoked)
+		WHERE a.id = $1 AND i.revoked_at IS NULL ORDER BY i.id DESC LIMIT 1`, agentID).Scan(&agentStatus, &ed, &ml, &recipient)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errBadToken
+	}
 	if err != nil {
 		return err
 	}
-	if agentStatus == "revoked" || identityRevoked || !bytes.Equal(ed, keys.Ed25519) || !bytes.Equal(ml, keys.MLDSA65) || recipient != keys.Recipient {
+	if agentStatus == "revoked" || !bytes.Equal(ed, keys.Ed25519) || !bytes.Equal(ml, keys.MLDSA65) || recipient != keys.Recipient {
 		return errBadToken
 	}
 	cert, err := e.s.cfg.Authority.SignAgent(csr, agentID, now)
@@ -145,8 +150,11 @@ func (e enrollment) repeat(ctx context.Context, tx pgx.Tx, agentID string, keys 
 
 // Enroll checks the proof of key possession, then claims the token, creates the
 // agent as pending approval, and issues its first connection certificate, all in
-// one transaction. A bad request never uses up a token, and the agent that used
-// a token can repeat the call with the same keys.
+// one transaction. A bad request never uses up a token. Within the token's
+// lifetime, the agent that used it can repeat the call with the same keys. A
+// new token for an existing agent re-enrolls it, but only with its own keys, so
+// a lost token or an expired first certificate can be recovered without
+// letting other keys take the agent's place.
 func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*agentv1.EnrollResponse, error) {
 	keys := trust.AgentKeys{
 		Ed25519:   req.GetEd25519PublicKey(),
@@ -189,11 +197,28 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 		if err != nil {
 			return err
 		}
-		if usedBy != nil {
-			return e.repeat(ctx, tx, *usedBy, keys, req.GetCertificateRequest(), now, &resp)
-		}
 		if !now.Before(expires) {
 			return errBadToken
+		}
+		if usedBy != nil {
+			return e.reissue(ctx, tx, *usedBy, keys, req.GetCertificateRequest(), now, &resp)
+		}
+		var existing string
+		err = tx.QueryRow(ctx, `SELECT id FROM agents WHERE workspace_id = $1 AND name = $2`, workspaceID, name).Scan(&existing)
+		if err == nil {
+			// Re-enrollment: the name is taken, so only the agent's own keys,
+			// and so its own derived ID, may use the token.
+			if existing != agentID {
+				return errBadToken
+			}
+			if err := e.reissue(ctx, tx, existing, keys, req.GetCertificateRequest(), now, &resp); err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx, `UPDATE enrollment_tokens SET used_at = $2, agent_id = $3 WHERE token_sha256 = $1`, sum[:], now, existing)
+			return err
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
 		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO agents (id, workspace_id, name, status) VALUES ($1, $2, $3, 'pending_approval')`,
