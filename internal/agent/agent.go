@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"filippo.io/age"
@@ -39,6 +40,9 @@ const (
 	KeyFile   = "agent.key"
 	StateFile = "agent.json"
 	CertFile  = "connection.crt"
+	// CAFile holds the connection CA as pinned at enrollment, so the agent
+	// can check its own certificate's signature without the orchestrator.
+	CAFile = "ca.crt"
 	// IdentityFile holds the agent's verified identity statement.
 	IdentityFile = "identity.json"
 	lockFile     = ".lock"
@@ -48,14 +52,19 @@ const (
 
 // Errors returned by this package.
 var (
-	ErrNotEnrolled    = errors.New("agent: not enrolled yet")
-	ErrDamaged        = errors.New("agent: key or state file is damaged")
-	ErrInvalidInstall = errors.New("agent: invalid install settings")
-	ErrBadCertificate = errors.New("agent: the orchestrator returned an unusable connection certificate")
-	ErrUnsupported    = errors.New("agent: private keys can't be stored safely on this platform yet")
-	ErrNotApproved    = errors.New("agent: not approved yet")
-	ErrWrongIdentity  = errors.New("agent: the identity is for another agent or other keys")
-	ErrSaveFailed     = errors.New("agent: saving the enrollment failed")
+	ErrNotEnrolled        = errors.New("agent: not enrolled yet")
+	ErrDamaged            = errors.New("agent: key or state file is damaged")
+	ErrInvalidInstall     = errors.New("agent: invalid install settings")
+	ErrBadCertificate     = errors.New("agent: the orchestrator returned an unusable connection certificate")
+	ErrUnsupported        = errors.New("agent: private keys can't be stored safely on this platform yet")
+	ErrNotApproved        = errors.New("agent: not approved yet")
+	ErrWrongIdentity      = errors.New("agent: the identity is for another agent or other keys")
+	ErrSaveFailed         = errors.New("agent: saving the enrollment failed")
+	ErrOtherSettings      = errors.New("agent: already enrolled with other settings")
+	ErrCertificateExpired = errors.New("agent: the connection certificate has expired, so create a new token with `mmft agent token` and run install again")
+	// ErrMissingCA means the agent was enrolled before the CA certificate was
+	// saved. A new token re-enrolls it with its own keys and saves the CA.
+	ErrMissingCA = errors.New("agent: no CA certificate is saved from enrollment, so create a new token with `mmft agent token` and run install again")
 	// ErrAlreadyEnrolled is returned only with a valid saved state.
 	ErrAlreadyEnrolled = errors.New("agent: already enrolled")
 )
@@ -263,9 +272,17 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 	defer unlock()
-	if s, err := ReadState(dir); err == nil {
-		return s, ErrAlreadyEnrolled
-	} else if !errors.Is(err, ErrNotEnrolled) {
+	// An enrolled agent with these settings is a safe repeat. One whose
+	// certificate has expired, for example because approval came after it ran
+	// out, re-enrolls with the new token and its own keys.
+	saved, err := CheckInstalled(dir, in, now())
+	switch {
+	case err == nil:
+		return saved, ErrAlreadyEnrolled
+	case errors.Is(err, ErrCertificateExpired), errors.Is(err, ErrMissingCA):
+	case errors.Is(err, ErrNotEnrolled):
+		saved = State{}
+	default:
 		return State{}, err
 	}
 	keys, err := LoadOrCreateKeys(dir)
@@ -286,7 +303,23 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 
-	creds := credentials.NewTLS(connca.PinnedClient(in.CAFingerprint, host, now))
+	// Keep the CA the handshake matched to the pin, to check the certificate
+	// against later.
+	var pinnedCA atomic.Pointer[x509.Certificate]
+	tlsConfig := connca.PinnedClient(in.CAFingerprint, host, now)
+	verify := tlsConfig.VerifyConnection
+	tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
+		if err := verify(cs); err != nil {
+			return err
+		}
+		for _, c := range cs.PeerCertificates[1:] {
+			if connca.Fingerprint(c) == in.CAFingerprint {
+				pinnedCA.Store(c)
+			}
+		}
+		return nil
+	}
+	creds := credentials.NewTLS(tlsConfig)
 	conn, err := grpc.NewClient(in.Orchestrator, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return State{}, err
@@ -310,15 +343,27 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, err
 	}
 
-	// The certificate is written before the state, because the state marks a
-	// finished enrollment. A leftover certificate from a failed attempt goes.
-	certPath := filepath.Join(dir, CertFile)
-	if err := os.Remove(certPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	ca := pinnedCA.Load()
+	if ca == nil {
+		return State{}, ErrBadCertificate
+	}
+	if err := checkSignedBy(resp.GetConnectionCertificate(), ca); err != nil {
+		return State{}, err
+	}
+	// The CA and certificate are written before the state, because the state
+	// marks a finished enrollment. Each replaces any earlier file atomically,
+	// so a failed re-enrollment keeps the old certificate and can be retried.
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
+	if err := replaceFile(filepath.Join(dir, CAFile), caPEM, 0o644); err != nil {
 		return State{}, saveFailed(err)
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: resp.GetConnectionCertificate()})
-	if err := trust.WriteNew(certPath, certPEM, 0o644); err != nil {
+	if err := replaceFile(filepath.Join(dir, CertFile), certPEM, 0o644); err != nil {
 		return State{}, saveFailed(err)
+	}
+	if saved.Version != 0 {
+		// The state is already saved, and the new certificate is all that changed.
+		return saved, nil
 	}
 	s := State{
 		Version:         formatVersion,
@@ -340,6 +385,105 @@ func Enroll(ctx context.Context, dir string, in Install, now func() time.Time) (
 		return State{}, saveFailed(err)
 	}
 	return s, nil
+}
+
+// CheckInstalled checks an enrolled agent in dir: its saved settings must match
+// in, apart from the token, its key file and connection certificate must load
+// and belong to it, and the certificate must not have expired. It returns
+// ErrNotEnrolled, ErrOtherSettings, ErrDamaged, ErrCertificateExpired, or
+// ErrMissingCA. The last two are fixed by installing again with a new token.
+func CheckInstalled(dir string, in Install, now time.Time) (State, error) {
+	s, err := ReadState(dir)
+	if err != nil {
+		return State{}, err
+	}
+	if s.Orchestrator != in.Orchestrator || s.Workspace != in.Workspace || s.AgentName != in.AgentName ||
+		s.CAFingerprint != in.CAFingerprint || s.RootFingerprint != in.RootFingerprint {
+		return s, ErrOtherSettings
+	}
+	keys, err := LoadKeys(dir)
+	if err != nil {
+		return s, fmt.Errorf("%w: %w", ErrDamaged, err)
+	}
+	if keys.Public().Fingerprint() != s.Fingerprint() {
+		return s, ErrDamaged
+	}
+	if _, err := loadCertificate(dir, s, keys, now); err != nil {
+		return s, err
+	}
+	return s, nil
+}
+
+// readCertificate reads one PEM certificate.
+func readCertificate(path string) (*x509.Certificate, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDamaged, err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, ErrDamaged
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, ErrDamaged
+	}
+	return cert, nil
+}
+
+// loadCertificate reads the connection certificate and requires it to hold
+// the agent's connection key, name its ID, and chain to the CA pinned at
+// enrollment for client use at now, exactly as the server's TLS check does. A
+// certificate that has only expired returns ErrCertificateExpired, which a new
+// token fixes. Anything else wrong is damage.
+func loadCertificate(dir string, s State, keys *Keys, now time.Time) (*x509.Certificate, error) {
+	ca, err := readCertificate(filepath.Join(dir, CAFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrMissingCA
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !ca.IsCA || connca.Fingerprint(ca) != s.CAFingerprint {
+		return nil, ErrDamaged
+	}
+	cert, err := readCertificate(filepath.Join(dir, CertFile))
+	if err != nil {
+		return nil, err
+	}
+	if cert.CheckSignatureFrom(ca) != nil {
+		return nil, ErrDamaged
+	}
+	pub, ok := cert.PublicKey.(ed25519.PublicKey)
+	if !ok || !pub.Equal(keys.Connection.Public()) {
+		return nil, ErrDamaged
+	}
+	if id, err := connca.AgentID(cert); err != nil || id != s.AgentID {
+		return nil, ErrDamaged
+	}
+	if !now.Before(cert.NotAfter) {
+		return nil, ErrCertificateExpired
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := cert.Verify(x509.VerifyOptions{
+		Roots:       roots,
+		CurrentTime: now,
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDamaged, err)
+	}
+	return cert, nil
+}
+
+// checkSignedBy requires the new connection certificate to be signed by the
+// CA the handshake matched to the pin.
+func checkSignedBy(der []byte, ca *x509.Certificate) error {
+	cert, err := x509.ParseCertificate(der)
+	if err != nil || cert.CheckSignatureFrom(ca) != nil {
+		return ErrBadCertificate
+	}
+	return nil
 }
 
 // saveFailed reports a failure to save an enrollment the orchestrator already
@@ -383,20 +527,18 @@ func FetchIdentity(ctx context.Context, dir string, now func() time.Time) (trust
 	if err != nil {
 		return trust.IdentityClaim{}, err
 	}
-	certPEM, err := os.ReadFile(filepath.Join(filepath.Clean(dir), CertFile))
+	// A certificate TLS would refuse fails the handshake with an unclear
+	// error, so check it first and say what to do instead.
+	cert, err := loadCertificate(dir, s, keys, now())
 	if err != nil {
 		return trust.IdentityClaim{}, err
-	}
-	block, _ := pem.Decode(certPEM)
-	if block == nil || block.Type != "CERTIFICATE" {
-		return trust.IdentityClaim{}, ErrDamaged
 	}
 	host, err := checkSettings(s.Orchestrator, s.AgentName, s.CAFingerprint, s.RootFingerprint)
 	if err != nil {
 		return trust.IdentityClaim{}, err
 	}
 	cfg := connca.PinnedClient(s.CAFingerprint, host, now)
-	cfg.Certificates = []tls.Certificate{{Certificate: [][]byte{block.Bytes}, PrivateKey: keys.Connection}}
+	cfg.Certificates = []tls.Certificate{{Certificate: [][]byte{cert.Raw}, PrivateKey: keys.Connection}}
 	conn, err := grpc.NewClient(s.Orchestrator, grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
 	if err != nil {
 		return trust.IdentityClaim{}, err

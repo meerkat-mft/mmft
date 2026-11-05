@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - The orchestrator issues one-use enrollment tokens and enrolls agents that prove they hold their keys.
 - An agent's ID is derived from its keys, and its workspace comes from `mmft-agent install --workspace`, so the orchestrator can't choose either. See ADR 0019.
+- A new token for an existing agent re-enrolls it with its own keys, so a lost token or a connection certificate that expired before approval can be recovered. A used token can be retried only while it is valid.
+- `mmft-agent install` exits 3 for a safe repeat only when its settings match and its keys and a current certificate are in place. Other settings or damaged files exit 1, and an expired certificate re-enrolls with the new token.
 - `mmft-agent install` enrolls an agent unattended, trusting the orchestrator only through the CA fingerprint in the install command, and `mmft-agent fingerprint` prints the value to compare before approval.
 - `mmft agent token` creates a one-use enrollment token and prints every value `mmft-agent install` needs, as JSON.
 - `mmft agent approve --fingerprints` signs the identity of each pending agent whose fingerprint, ID, workspace, and name match the values collected from its host, and refuses any other with exit code 4. It skips agents already approved only when they match too. It never prompts.
