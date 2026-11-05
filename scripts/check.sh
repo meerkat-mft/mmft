@@ -27,9 +27,10 @@ GOOS=windows go build ./...
 
 if [ -z "${MMFT_TEST_DATABASE_URL:-}" ]; then
   step "Start a throwaway Postgres"
-  container="mmft-check-$$"
-  docker run -d --rm --name "$container" -e POSTGRES_DB=mmft -e POSTGRES_USER=mmft \
-    -e POSTGRES_PASSWORD=check-only-not-a-secret -p 127.0.0.1::5432 postgres:18-alpine >/dev/null
+  # Cleanup uses the ID docker run prints, set only once this run created the
+  # container, so a name clash can never remove someone else's container.
+  container=$(docker run -d --rm --name "mmft-check-$$" -e POSTGRES_DB=mmft -e POSTGRES_USER=mmft \
+    -e POSTGRES_PASSWORD=check-only-not-a-secret -p 127.0.0.1::5432 postgres:18-alpine)
   port=$(docker port "$container" 5432/tcp | head -n 1 | sed 's/.*://')
   printf 'Waiting for Postgres on port %s' "$port"
   tries=0
