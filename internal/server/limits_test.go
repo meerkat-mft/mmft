@@ -140,7 +140,7 @@ func TestListenersCapConnections(t *testing.T) {
 		t.Fatal("a second connection was accepted past the cap")
 	}
 	_ = first.Close()
-	h.tlsDial(t, h.apiAddr).Close()
+	h.tlsDial(t, h.apiAddr)
 }
 
 // TestGRPCCapsStreamsPerConnection speaks raw HTTP/2 so a stream can be opened
@@ -188,7 +188,7 @@ func TestGRPCCapsStreamsPerConnection(t *testing.T) {
 		}
 	}
 	// Open one stream more than allowed, none with a body.
-	last := uint32(2*l.maxStreams + 1)
+	last := 2*l.maxStreams + 1
 	for id := uint32(1); id <= last; id += 2 {
 		if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: id, BlockFragment: buf.Bytes(), EndHeaders: true}); err != nil {
 			t.Fatal(err)
