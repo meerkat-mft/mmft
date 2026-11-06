@@ -48,9 +48,13 @@ jobs:
           #   findings.
           # - create_inline_comment: posts each finding on its line. The
           #   server behind it starts only when this tool is listed.
-          claude_args: >-
-            --allowedTools
-            "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
+          # Each rule matches only a single command, so a pipe, redirect, or
+          # chain is refused. Rather than allow grep, git, or gh api, which a
+          # crafted pull request could steer outside the checkout, the
+          # appended prompt points the reviewer at the checked-out files.
+          claude_args: |
+            --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
+            --append-system-prompt "The pull request is already checked out in the working directory, so read the changed files and their context with the Read, Grep, and Glob tools. Use Bash only for single gh pr view, gh pr diff, and gh pr comment commands, with no pipes, redirects, chained commands, or other programs. Anything else is refused and fails the review. If a diff is too long to read at once, list its files with gh pr diff --name-only and read each one with Read. Give these rules to every subagent you launch."
       # A refused tool does not fail the action, so a review that could not
       # read or post anything used to pass green. This prints only the refused
       # tool and the start of its command, never the model's output.
