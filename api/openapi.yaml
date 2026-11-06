@@ -297,7 +297,9 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 255
-                  description: A bare file name, with no path separators, NUL, or control characters, and not `.` or `..`.
+                  description: >-
+                    A bare file name: no path separator, colon, NUL, or control character, not `.` or `..`, not ending
+                    in a dot or space, and not a Windows device name such as `CON`.
       responses:
         '202':
           description: The run was accepted.
@@ -583,7 +585,9 @@ components:
           $ref: '#/components/schemas/Id'
         file_name:
           type: string
-          description: Reported by an agent. Untrusted, may be personal data, and is missing once retention has deleted it.
+          description: >-
+            For a manual run, the name the administrator gave. For a flow, reported by an agent. Untrusted, may be
+            personal data, and is missing once retention has deleted it.
           maxLength: 1024
         size_bytes:
           type: integer

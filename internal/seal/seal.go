@@ -62,6 +62,20 @@ var freeSpace = freeBytes
 // it to change the sealed file in between.
 var afterHashCheck = func() {}
 
+// HasRoom fails with ErrNoSpace unless dir has need bytes free. The destination
+// checks before it receives a sealed file and decrypts it, so a large manifest
+// fails with a clear reason rather than filling the disk.
+func HasRoom(dir string, need uint64) error {
+	free, err := freeSpace(dir)
+	if err != nil {
+		return fmt.Errorf("seal: check free space: %w", pathless(err))
+	}
+	if free < need {
+		return fmt.Errorf("%w: %d bytes are needed and %d are free", ErrNoSpace, need, free)
+	}
+	return nil
+}
+
 // Sealed describes a sealed file in an agent's spool.
 type Sealed struct {
 	Path   string

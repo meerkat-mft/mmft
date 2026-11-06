@@ -46,8 +46,14 @@ type RunConfig struct {
 	Outbox, Inbox, Spool string
 }
 
-// updateBuffer is how many delivery updates can wait for a stream.
-const updateBuffer = 64
+const (
+	// updateBuffer is how many delivery updates can wait for a stream.
+	updateBuffer = 64
+	// maxDeliveries is how many deliveries the agent runs at once. More are
+	// refused, so an orchestrator can't make it fill its spool or hold
+	// unbounded relay streams.
+	maxDeliveries = 8
+)
 
 const (
 	defaultHeartbeat  = 30 * time.Second
@@ -85,6 +91,15 @@ type runner struct {
 	mu   sync.Mutex
 	// updates holds delivery updates until a stream can send them.
 	updates chan *agentv1.ConnectRequest
+	// held is an update a failed send couldn't deliver. The next stream sends
+	// it first. Only the session loop touches it.
+	held *agentv1.ConnectRequest
+
+	// active holds the IDs of deliveries in progress, under deliveriesMu, and
+	// deliveries waits for them before Run returns.
+	deliveriesMu sync.Mutex
+	active       map[string]bool
+	deliveries   sync.WaitGroup
 }
 
 // Run keeps the agent connected to the orchestrator until ctx ends. It
@@ -116,7 +131,15 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 	if err != nil {
 		return err
 	}
-	r := &runner{dir: dir, cfg: cfg, s: s, keys: keys, host: host, ca: ca, updates: make(chan *agentv1.ConnectRequest, updateBuffer)}
+	r := newRunner(dir, cfg, s, keys)
+	r.host, r.ca = host, ca
+	// Deliveries run under their own context, which ends with Run, and Run
+	// waits for them, so none outlives it.
+	deliveryCtx, stopDeliveries := context.WithCancel(ctx)
+	defer func() {
+		stopDeliveries()
+		r.deliveries.Wait()
+	}()
 	backoff := newBackoff(cfg.MinBackoff, cfg.MaxBackoff)
 	for {
 		cert, err := r.certificate()
@@ -124,7 +147,7 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 			r.log("stopped", err)
 			return err
 		}
-		welcomed, sessionErr := r.session(ctx, ctx, cert)
+		welcomed, sessionErr := r.session(deliveryCtx, ctx, cert)
 		select {
 		case <-ctx.Done():
 			// Stopping is a normal end, whatever the stream reported.
@@ -167,15 +190,22 @@ func (b *backoff) wait(ctx context.Context) bool {
 	return true
 }
 
+func newRunner(dir string, cfg RunConfig, s State, keys *Keys) *runner {
+	return &runner{dir: dir, cfg: cfg, s: s, keys: keys,
+		updates: make(chan *agentv1.ConnectRequest, updateBuffer), active: map[string]bool{}}
+}
+
 // ErrDeliveryDirs is returned when the outbox, inbox, or spool is unusable.
-var ErrDeliveryDirs = errors.New("agent: the outbox and inbox need a spool, and each must be an existing directory")
+var ErrDeliveryDirs = errors.New("agent: the outbox and inbox need a spool, and each must be a separate, existing directory")
 
 // checkDirs requires a spool with an outbox or inbox, and each set directory to
-// exist.
+// exist and be a different directory from the others, so a delivery can't read
+// what another wrote or find sealed files where it reads.
 func (c *RunConfig) checkDirs() error {
 	if (c.Outbox != "" || c.Inbox != "") && c.Spool == "" {
 		return ErrDeliveryDirs
 	}
+	var seen []os.FileInfo
 	for _, dir := range []string{c.Outbox, c.Inbox, c.Spool} {
 		if dir == "" {
 			continue
@@ -184,6 +214,12 @@ func (c *RunConfig) checkDirs() error {
 		if err != nil || !info.IsDir() {
 			return ErrDeliveryDirs
 		}
+		for _, other := range seen {
+			if os.SameFile(info, other) {
+				return ErrDeliveryDirs
+			}
+		}
+		seen = append(seen, info)
 	}
 	return nil
 }
@@ -253,12 +289,30 @@ func (r *runner) session(runCtx, ctx context.Context, cert *x509.Certificate) (w
 				return
 			}
 			if d := resp.GetManualDelivery(); d != nil {
-				go r.deliver(runCtx, d)
+				r.startDelivery(runCtx, d)
 			}
 		}
 	}()
 	ticker := time.NewTicker(r.cfg.Heartbeat)
 	defer ticker.Stop()
+	// sendUpdate sends an update, and on failure holds it for the next stream,
+	// so none is lost or reordered.
+	sendUpdate := func(u *agentv1.ConnectRequest) error {
+		if err := stream.Send(u); err != nil {
+			r.held = u
+			if errors.Is(err, io.EOF) {
+				return <-ended
+			}
+			return err
+		}
+		return nil
+	}
+	if u := r.held; u != nil {
+		r.held = nil
+		if err := sendUpdate(u); err != nil {
+			return true, err
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -266,15 +320,7 @@ func (r *runner) session(runCtx, ctx context.Context, cert *x509.Certificate) (w
 		case err := <-ended:
 			return true, err
 		case u := <-r.updates:
-			if err := stream.Send(u); err != nil {
-				// Keep the update for the next stream.
-				select {
-				case r.updates <- u:
-				default:
-				}
-				if errors.Is(err, io.EOF) {
-					return true, <-ended
-				}
+			if err := sendUpdate(u); err != nil {
 				return true, err
 			}
 		case <-ticker.C:

@@ -43,7 +43,9 @@ type agentStream struct {
 }
 
 // register makes a stream the agent's current one. A newer stream from the same
-// agent replaces it. The returned function removes it again.
+// agent replaces it. The returned function removes it again, and fails every
+// delivery whose assignment was still waiting in its queue, so no delivery is
+// left running with no agent working on it.
 func (s *Server) register(agentID string) (*agentStream, func()) {
 	st := &agentStream{out: make(chan *agentv1.ConnectResponse, streamBuffer)}
 	s.streamsMu.Lock()
@@ -51,10 +53,26 @@ func (s *Server) register(agentID string) (*agentStream, func()) {
 	s.streamsMu.Unlock()
 	return st, func() {
 		s.streamsMu.Lock()
-		defer s.streamsMu.Unlock()
 		if s.streams[agentID] == st {
 			delete(s.streams, agentID)
 		}
+		s.streamsMu.Unlock()
+		for {
+			select {
+			case m := <-st.out:
+				s.dispatchLost(m)
+			default:
+				return
+			}
+		}
+	}
+}
+
+// dispatchLost fails the delivery a message assigned, when the message never
+// reached the agent.
+func (s *Server) dispatchLost(m *agentv1.ConnectResponse) {
+	if d := m.GetManualDelivery(); d != nil {
+		s.failDelivery(context.Background(), d.GetDeliveryId(), codeDispatchFailed)
 	}
 }
 

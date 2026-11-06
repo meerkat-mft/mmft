@@ -5,17 +5,22 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 
 	agentv1 "mmft.dev/mmft/gen/agent/v1"
@@ -242,7 +247,7 @@ func (a *labAgent) side(t *testing.T) *runner {
 	}
 	cfg := RunConfig{Outbox: a.outbox, Inbox: a.inbox, Spool: a.spool}
 	cfg.defaults()
-	return &runner{dir: a.dir, cfg: cfg, s: a.state, keys: keys, updates: make(chan *agentv1.ConnectRequest, updateBuffer)}
+	return newRunner(a.dir, cfg, a.state, keys)
 }
 
 // quick bounds a side driven directly. Every refusal happens before the relay,
@@ -378,7 +383,11 @@ func TestRunNeedsUsableDeliveryDirectories(t *testing.T) {
 			t.Errorf("%s: got %v", name, err)
 		}
 	}
-	if err := (&RunConfig{Outbox: dir, Inbox: dir, Spool: dir}).checkDirs(); err != nil {
+	// One directory for two roles is refused.
+	if err := (&RunConfig{Outbox: dir, Inbox: dir, Spool: t.TempDir()}).checkDirs(); !errors.Is(err, ErrDeliveryDirs) {
+		t.Errorf("shared outbox and inbox: got %v", err)
+	}
+	if err := (&RunConfig{Outbox: t.TempDir(), Inbox: t.TempDir(), Spool: dir}).checkDirs(); err != nil {
 		t.Fatal(err)
 	}
 	if err := (&RunConfig{}).checkDirs(); err != nil {
@@ -419,4 +428,206 @@ func TestPlaceNeverReplacesAFile(t *testing.T) {
 	if got, _ := os.ReadFile(fresh); string(got) != "new" {
 		t.Fatalf("placed %q", got)
 	}
+}
+
+func TestTheDestinationRefusesWhatItMayNotWrite(t *testing.T) {
+	l := startDeliveryLab(t)
+	a, b := l.agents["agent-a"], l.agents["agent-b"]
+	keys, err := LoadKeys(a.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := func(size int64) []byte {
+		d := seal.Delivery{DeliveryID: testDelivery, SourceAgent: a.id, DestinationAgent: b.id}
+		e, err := seal.SignManifest(d, seal.Sealed{Size: size, SHA256: [32]byte{1}}, keys.Signer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(e)
+		return raw
+	}
+	d := func(name string, size int64) *agentv1.ManualDelivery {
+		return &agentv1.ManualDelivery{DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: name,
+			PeerAgentId: a.id, PeerIdentityStatement: a.identity, ManifestStatement: manifest(size)}
+	}
+	r := b.side(t)
+	outside := filepath.Join(t.TempDir(), "escaped")
+	for _, name := range []string{"../escaped", outside, "a/b", "..", "x:y"} {
+		_, err := r.receiveSide(quick(t), d(name, 100))
+		wantCode(t, err, codeInvalidFileName)
+	}
+	if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a file was written outside the inbox: %v", err)
+	}
+	// A manifest bigger than the disk fails before any byte arrives.
+	_, err = r.receiveSide(quick(t), d("huge", 1<<60))
+	wantCode(t, err, codeSpoolFull)
+	empty(t, b.spool)
+	empty(t, b.inbox)
+
+	r.cfg.Inbox = ""
+	_, err = r.receiveSide(quick(t), d("f", 100))
+	wantCode(t, err, codeNotConfigured)
+}
+
+func TestDeliveriesAreBoundedAndNeverRunTwice(t *testing.T) {
+	l := startDeliveryLab(t)
+	r := l.agents["agent-b"].side(t)
+	ctx := quick(t)
+
+	// The same delivery again is ignored while the first is running.
+	r.active[testDelivery] = true
+	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery})
+	r.deliveries.Wait()
+	select {
+	case u := <-r.updates:
+		t.Fatalf("a repeated delivery was started: %v", u)
+	default:
+	}
+
+	// Past the limit, a new delivery is refused at once.
+	for i := range maxDeliveries - 1 {
+		r.active[fmt.Sprintf("0190a0b0-0000-7000-8000-%012d", i)] = true
+	}
+	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: "0190a0b0-0000-7000-8000-0000000000ff"})
+	r.deliveries.Wait()
+	select {
+	case u := <-r.updates:
+		if got := u.GetDeliveryUpdate(); got.GetErrorCode() != codeBusy {
+			t.Fatalf("update %v", got)
+		}
+	default:
+		t.Fatal("the extra delivery was not refused")
+	}
+}
+
+func TestDeliveriesEndWithTheirContext(t *testing.T) {
+	l := startDeliveryLab(t)
+	a, b := l.agents["agent-a"], l.agents["agent-b"]
+	keys, err := LoadKeys(a.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := seal.SignManifest(seal.Delivery{DeliveryID: testDelivery, SourceAgent: a.id, DestinationAgent: b.id},
+		seal.Sealed{Size: 100, SHA256: [32]byte{1}}, keys.Signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, _ := json.Marshal(e)
+	r := b.side(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	// The relay address goes nowhere, so the receive retries until stopped.
+	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: "f",
+		PeerAgentId: a.id, PeerIdentityStatement: a.identity, ManifestStatement: manifest,
+		RelayTicket: &agentv1.RelayTicket{DeliveryId: testDelivery, RelayAddress: "127.0.0.1:1", RelayCertificateSha256: make([]byte, 32)}})
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		r.deliveries.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the delivery kept running after its context ended")
+	}
+	empty(t, b.spool)
+}
+
+// assigner is an orchestrator that welcomes the agent and then sends it one
+// message.
+type assigner struct {
+	agentv1.UnimplementedAgentServiceServer
+	m *agentv1.ConnectResponse
+}
+
+func (a assigner) Connect(stream agentv1.AgentService_ConnectServer) error {
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	if err := stream.Send(&agentv1.ConnectResponse{Message: &agentv1.ConnectResponse_Welcome{Welcome: &agentv1.Welcome{ProtocolVersion: ProtocolVersion}}}); err != nil {
+		return err
+	}
+	if err := stream.Send(a.m); err != nil {
+		return err
+	}
+	for {
+		if _, err := stream.Recv(); err != nil {
+			return err
+		}
+	}
+}
+
+// Run must not return while a delivery is still running, so an embedder
+// never has a delivery writing to its spool after Run has ended.
+func TestRunWaitsForItsDeliveries(t *testing.T) {
+	// A delivery that is slow to end, so Run returning first would show.
+	var ended atomic.Bool
+	deliveryEnded = func() {
+		time.Sleep(300 * time.Millisecond)
+		ended.Store(true)
+	}
+	t.Cleanup(func() { deliveryEnded = func() {} })
+	l := startDeliveryLab(t)
+	a, b := l.agents["agent-a"], l.agents["agent-b"]
+	keys, err := LoadKeys(a.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := seal.SignManifest(seal.Delivery{DeliveryID: testDelivery, SourceAgent: a.id, DestinationAgent: b.id},
+		seal.Sealed{Size: 100, SHA256: [32]byte{1}}, keys.Signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, _ := json.Marshal(e)
+	// The relay address goes nowhere, so the receive retries until stopped.
+	assignment := &agentv1.ConnectResponse{Message: &agentv1.ConnectResponse_ManualDelivery{ManualDelivery: &agentv1.ManualDelivery{
+		DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: "f",
+		PeerAgentId: a.id, PeerIdentityStatement: a.identity, ManifestStatement: manifest,
+		RelayTicket: &agentv1.RelayTicket{DeliveryId: testDelivery, RelayAddress: "127.0.0.1:1", RelayCertificateSha256: make([]byte, 32)},
+	}}}
+	serverCert, err := l.o.CA.ServerCertificate([]string{"localhost"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
+		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{*serverCert},
+		ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: l.o.CA.Pool(),
+	})))
+	agentv1.RegisterAgentServiceServer(srv, assigner{m: assignment})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(srv.Stop)
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	pointAt(t, b.dir, net.JoinHostPort("localhost", port))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, b.dir, RunConfig{MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
+			Inbox: b.inbox, Spool: b.spool})
+	}()
+	// Wait until the receive holds its spool file.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if entries, _ := os.ReadDir(b.spool); len(entries) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the delivery never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !ended.Load() {
+		t.Fatal("Run returned while a delivery was still running")
+	}
+	empty(t, b.spool)
 }

@@ -41,7 +41,7 @@ cleanup() { docker compose down --volumes --remove-orphans >/dev/null 2>&1 || tr
 start_orchestrator() {
   # shellcheck disable=SC2086 # the relay options are deliberately split
   docker compose exec -d -T "$@" ${relay_fp:+-e MMFT_RELAY_ADDRESS=relay:7445 -e MMFT_RELAY_CERTIFICATE_SHA256=$relay_fp} \
-    orchestrator mmft-orchestrator serve
+    orchestrator sh -c "exec mmft-orchestrator serve >>/var/log/mmft/orchestrator.log 2>&1"
   echo "Waiting for the orchestrator to listen on 7443 and 7444..."
   for _ in $(seq 1 30); do
     if in_lab orchestrator nc -z localhost 7443 2>/dev/null && in_lab orchestrator nc -z localhost 7444 2>/dev/null; then

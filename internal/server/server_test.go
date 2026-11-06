@@ -57,6 +57,7 @@ type harness struct {
 	grpcAddr string
 	apiAddr  string
 	pool     *x509.CertPool
+	srv      *Server
 }
 
 func start(t *testing.T) harness {
@@ -97,7 +98,7 @@ func startWith(t *testing.T, edit func(*Config)) harness {
 			t.Errorf("serve: %v", err)
 		}
 	})
-	return harness{clock: c, ca: ca, db: pool, grpcAddr: g.Addr().String(), apiAddr: a.Addr().String(), pool: ca.Pool()}
+	return harness{clock: c, ca: ca, db: pool, grpcAddr: g.Addr().String(), apiAddr: a.Addr().String(), pool: ca.Pool(), srv: s}
 }
 
 func clientCert(t *testing.T, ca *connca.Authority, id string) tls.Certificate {

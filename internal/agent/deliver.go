@@ -60,8 +60,45 @@ var (
 	errLinkedSource  = errors.New("agent: the source is a link or not a regular file")
 )
 
+// codeBusy is reported when the agent already runs maxDeliveries deliveries.
+const codeBusy = "agent_busy"
+
+// deliveryEnded runs as each delivery's goroutine ends. Tests replace it.
+var deliveryEnded = func() {}
+
+// startDelivery runs a delivery on its own, so it outlives a dropped stream. A
+// delivery already in progress is not started twice, and past maxDeliveries a
+// new one is refused at once.
+func (r *runner) startDelivery(ctx context.Context, d *agentv1.ManualDelivery) {
+	id := d.GetDeliveryId()
+	r.deliveriesMu.Lock()
+	defer r.deliveriesMu.Unlock()
+	if r.active[id] {
+		return
+	}
+	busy := len(r.active) >= maxDeliveries
+	if !busy {
+		r.active[id] = true
+	}
+	r.deliveries.Add(1)
+	go func() {
+		defer r.deliveries.Done()
+		defer deliveryEnded()
+		if busy {
+			r.log("delivery failed", nil, "delivery_id", id, "code", codeBusy)
+			r.report(ctx, &agentv1.DeliveryUpdate{DeliveryId: id, State: agentv1.DeliveryState_DELIVERY_STATE_FAILED, ErrorCode: codeBusy})
+			return
+		}
+		defer func() {
+			r.deliveriesMu.Lock()
+			delete(r.active, id)
+			r.deliveriesMu.Unlock()
+		}()
+		r.deliver(ctx, d)
+	}()
+}
+
 // deliver runs this agent's side of a manual delivery and reports the result.
-// It runs on its own, so a delivery outlives a dropped stream.
 func (r *runner) deliver(ctx context.Context, d *agentv1.ManualDelivery) {
 	id := d.GetDeliveryId()
 	if !trust.ValidAgentID(id) {
@@ -225,10 +262,20 @@ func (r *runner) receiveSide(ctx context.Context, d *agentv1.ManualDelivery) (*a
 		return nil, failWith(codeDestinationExists, fs.ErrExist)
 	}
 
-	// A fixed spool name per delivery, so a retried receive resumes.
+	// The sealed copy goes to the spool, and the decrypted one, which is no
+	// larger, to the inbox. Both must fit before any byte arrives.
+	size := uint64(m.SealedSize) //nolint:gosec // a verified manifest's size is positive
+	for _, dir := range []string{r.cfg.Spool, r.cfg.Inbox} {
+		if err := seal.HasRoom(dir, size); err != nil {
+			return nil, failWith(codeSpoolFull, err)
+		}
+	}
+
+	// A fixed spool name per delivery. ReceiveFile resumes it across dropped
+	// connections, and it is removed when this side ends.
 	spooled := filepath.Join(r.cfg.Spool, "receive-"+d.GetDeliveryId()+".age")
 	defer func() { _ = os.Remove(spooled) }()
-	if err := ReceiveFile(ctx, r.dir, d.GetRelayTicket(), spooled, uint64(m.SealedSize), r.relayConfig()); err != nil { //nolint:gosec // a verified manifest's size is positive
+	if err := ReceiveFile(ctx, r.dir, d.GetRelayTicket(), spooled, size, r.relayConfig()); err != nil {
 		return nil, failWith(codeRelayFailed, err)
 	}
 	opened, err := seal.Open(spooled, m, r.keys.Encryption, r.cfg.Inbox)

@@ -68,7 +68,10 @@ dest_sum=$(in_lab agent-b sha256sum "$inbox/$name" 2>/dev/null | cut -d' ' -f1 |
 if [ "$dest_sum" = "$source_sum" ]; then pass "$label"; else fail "$label"; fi
 
 sealed_sum=$(field sealed_sha256 <"$work/run.json")
-capture=$(in_lab relay sh -c "ls $relay/capture/*.sealed" 2>/dev/null | head -n 1 || true)
+captures=$(in_lab relay sh -c "ls $relay/capture/*.sealed" 2>/dev/null || true)
+label="the relay forwarded one delivery"
+if [ "$(echo "$captures" | grep -c .)" = 1 ]; then pass "$label"; else fail "$label"; fi
+capture=$captures
 label="the relay forwarded exactly the sealed file in the manifest"
 relay_sum=$(in_lab relay sha256sum "$capture" 2>/dev/null | cut -d' ' -f1 || true)
 if [ -n "$sealed_sum" ] && [ "$relay_sum" = "$sealed_sum" ]; then pass "$label"; else fail "$label"; fi
@@ -88,6 +91,9 @@ label="the file name is stored only in delivery_files"
 if [ "$(grep -c -F "$name" "$work/db.sql" || true)" = 1 ]; then pass "$label"; else fail "$label"; fi
 label="the orchestrator's CA directory holds nothing of the file"
 if ! in_lab orchestrator grep -r -q -F "$marker" /var/lib/mmft/ca; then pass "$label"; else fail "$label"; fi
+label="the orchestrator's log names no file and holds none of it"
+if in_lab orchestrator test -f /var/log/mmft/orchestrator.log &&
+  ! in_lab orchestrator grep -q -F "$marker" /var/log/mmft/orchestrator.log; then pass "$label"; else fail "$label"; fi
 
 for host in agent-a agent-b; do
   label="$host's spool is empty"

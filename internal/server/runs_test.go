@@ -366,3 +366,29 @@ func TestAnAgentCanFailItsDelivery(t *testing.T) {
 		t.Fatalf("delivery %+v", got)
 	}
 }
+
+func TestALostAssignmentFailsTheDelivery(t *testing.T) {
+	h, a, b := pair(t)
+	var runID, deliveryID string
+	ctx := t.Context()
+	if err := h.db.QueryRow(ctx, `INSERT INTO runs (workspace_id, status)
+		SELECT workspace_id, 'running' FROM agents WHERE id = $1 RETURNING id`, a.id).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.QueryRow(ctx, `INSERT INTO deliveries (run_id, source_agent_id, destination_agent_id, status)
+		VALUES ($1, $2, $3, 'pending') RETURNING id`, runID, a.id, b.id).Scan(&deliveryID); err != nil {
+		t.Fatal(err)
+	}
+	// A stream whose writer never sends: its queue still holds the assignment
+	// when the stream ends.
+	const ghost = "0190a0b0-0000-7000-8000-00000000000f"
+	_, unregister := h.srv.register(ghost)
+	if !h.srv.push(ghost, manualDelivery(&agentv1.ManualDelivery{DeliveryId: deliveryID})) {
+		t.Fatal("push failed")
+	}
+	unregister()
+	got := h.waitDelivery(t, runID, "failed")
+	if got.ErrorCode == nil || *got.ErrorCode != codeDispatchFailed || h.run(t, runID).Status != "failed" {
+		t.Fatalf("delivery %+v", got)
+	}
+}

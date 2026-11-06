@@ -110,6 +110,7 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 			select {
 			case m := <-out.out:
 				if err := stream.Send(m); err != nil {
+					a.s.dispatchLost(m)
 					sendErr <- err
 					return
 				}

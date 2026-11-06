@@ -34,6 +34,9 @@ services:
       MMFT_ADMIN_TOKEN_SHA256: 979764906a9c6981445fc9d6c48070eb0e4400f274714e09dbfdc70176c34caf
     volumes:
       - orchestrator-ca:/var/lib/mmft/ca
+    tmpfs:
+      # The orchestrator's log, so scripts can check what it wrote.
+      - /var/log/mmft:size=16m,uid=10001,mode=0700
     depends_on:
       postgres:
         condition: service_healthy
