@@ -49,7 +49,7 @@ During 0.x, the REST API can break while staying on `/api/v1/`, if the release n
 2. If the issue is labelled `needs-plan`, post a plan as a comment and wait for approval.
 3. Create a short-lived branch from `main`.
 4. Open a pull request from the template, with `Closes #n` in its description and a Conventional Commits title.
-5. Copilot reviews every pull request automatically. Fix each valid comment and resolve its thread. For a comment that doesn't apply, reply with the reason and leave the thread for the maintainer to resolve.
+5. Claude reviews every pull request automatically through the `Claude review` workflow. Fix each valid comment and resolve its thread. For a comment that doesn't apply, reply with the reason and leave the thread for the maintainer to resolve.
 6. Merge after CI passes and every conversation is resolved, using a squash merge. The branch is deleted automatically.
 7. Confirm that the issue is closed and shows as Done.
 
@@ -75,9 +75,9 @@ Work that doesn't change the repo, such as DNS or account setup, is closed on th
 - Create a `release/0.5` style branch only when a release needs a fix that `main` cannot take.
 - Commits follow Conventional Commits, such as `feat(agent): add file watcher`. Commits made before this rule stay as they are. Scopes are listed in [naming.md](naming.md#commit-scopes).
 - Pull request titles follow Conventional Commits too, because the squash merge uses the title as the commit on `main`. CI checks the title.
-- `main` is protected by the `Protect main` ruleset: pull requests only, all CI jobs passing, linear history, every conversation resolved, and an automatic Copilot review. Nobody can bypass it.
+- `main` is protected by the `Protect main` ruleset: pull requests only, all CI jobs passing, linear history, and every conversation resolved. Nobody can bypass it.
 - `v*` tags are protected by the `Protect release tags` ruleset: once pushed, a release tag can't be moved or deleted. A bad release gets a new version, not a retag. Nobody can bypass it.
-- Copilot review follows `.github/copilot-instructions.md`. Update it when a rule in `CLAUDE.md` changes.
+- The `Claude review` workflow runs Claude Code's code-review skill on the maintainer's subscription, through the `CLAUDE_CODE_OAUTH_TOKEN` secret made with `claude setup-token`. It reads `CLAUDE.md`, so a review rule belongs there. `.github/copilot-instructions.md` stays for Copilot, which reviews only while its allowance lasts.
 
 ## Releases
 
