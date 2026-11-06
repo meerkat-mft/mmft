@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"mmft.dev/mmft/internal/newfile"
 )
 
 const (
@@ -60,33 +62,15 @@ func CreateIdentity(dir string, now time.Time) ([]byte, error) {
 		return nil, err
 	}
 	keyPath := filepath.Join(dir, identityKeyFile)
-	if err := writeNew(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+	if err := newfile.Write(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
 		return nil, err
 	}
-	if err := writeNew(filepath.Join(dir, identityCertFile), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+	if err := newfile.Write(filepath.Join(dir, identityCertFile), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
 		_ = os.Remove(keyPath)
 		return nil, err
 	}
 	sum := sha256.Sum256(der)
 	return sum[:], nil
-}
-
-func writeNew(path string, data []byte, mode os.FileMode) error {
-	f, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return err
-	}
-	return f.Close()
 }
 
 // LoadIdentity reads the relay's key and certificate from dir.

@@ -104,7 +104,7 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 		return err
 	}
 	r := &runner{dir: dir, cfg: cfg, s: s, keys: keys, host: host, ca: ca}
-	backoff := cfg.MinBackoff
+	backoff := newBackoff(cfg.MinBackoff, cfg.MaxBackoff)
 	for {
 		cert, err := r.certificate()
 		if err != nil {
@@ -119,19 +119,39 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 		default:
 		}
 		if welcomed {
-			backoff = cfg.MinBackoff
+			backoff.reset()
 		}
 		r.log("disconnected", sessionErr)
-		// Wait between half and all of the backoff, so agents that lost the
-		// orchestrator together don't all return at once.
-		wait := backoff/2 + mrand.N(backoff/2+1) //nolint:gosec // jitter, not a secret
-		select {
-		case <-ctx.Done():
+		if !backoff.wait(ctx) {
 			return nil
-		case <-time.After(wait):
 		}
-		backoff = min(2*backoff, cfg.MaxBackoff)
 	}
+}
+
+// backoff is the wait before trying again. It doubles after each wait, up to a
+// ceiling, until reset.
+type backoff struct {
+	min, max, step time.Duration
+}
+
+func newBackoff(minimum, maximum time.Duration) *backoff {
+	return &backoff{min: minimum, max: maximum, step: minimum}
+}
+
+func (b *backoff) reset() { b.step = b.min }
+
+// wait sleeps between half and all of the current step, so agents that lost
+// the same server together don't all return at once. It reports false if ctx
+// ended first.
+func (b *backoff) wait(ctx context.Context) bool {
+	d := b.step/2 + mrand.N(b.step/2+1) //nolint:gosec // jitter, not a secret
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+	}
+	b.step = min(2*b.step, b.max)
+	return true
 }
 
 func (r *runner) log(event string, err error, fields ...any) {
@@ -171,7 +191,7 @@ func (r *runner) session(ctx context.Context, cert *x509.Certificate) (welcomed 
 		return false, err
 	}
 	if err := stream.Send(r.hello()); err != nil {
-		return false, streamError(stream, err)
+		return false, streamEnd(stream.Recv, err)
 	}
 	// A server that never answers must not hold the agent for ever.
 	timer := time.AfterFunc(callTimeout, cancel)
@@ -231,11 +251,11 @@ func (r *runner) session(ctx context.Context, cert *x509.Certificate) (welcomed 
 	}
 }
 
-// streamError returns the real reason a send failed. A failed send reports
-// only io.EOF, and the status comes from the next receive.
-func streamError(stream agentv1.AgentService_ConnectClient, err error) error {
+// streamEnd returns the real reason a send failed. A failed send reports only
+// io.EOF, and the status comes from the next receive.
+func streamEnd[T any](recv func() (T, error), err error) error {
 	if errors.Is(err, io.EOF) {
-		if _, rerr := stream.Recv(); rerr != nil {
+		if _, rerr := recv(); rerr != nil {
 			return rerr
 		}
 	}

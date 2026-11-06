@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -204,6 +205,53 @@ func TestDamagedKeyIsRefused(t *testing.T) {
 	for _, s := range []string{"", "zz", "00"} {
 		if _, err := ParsePublicKey(s); !errors.Is(err, ErrBadKey) {
 			t.Errorf("%q: got %v, want ErrBadKey", s, err)
+		}
+	}
+}
+
+func TestTicketExpiringTooFarAheadIsRefused(t *testing.T) {
+	key := newKey(t)
+	ok := valid()
+	ok.ExpiresAt = now.Add(Lifetime + clockSkew)
+	data, err := Issue(key, ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(pub(key), data, now); err != nil {
+		t.Fatalf("a ticket at the limit was refused: %v", err)
+	}
+	long := valid()
+	long.ExpiresAt = now.Add(Lifetime + clockSkew + time.Second)
+	data, err = Issue(key, long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(pub(key), data, now); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("got %v, want ErrInvalid", err)
+	}
+}
+
+func TestConcurrentFirstCallsShareOneKey(t *testing.T) {
+	for range 20 {
+		dir := t.TempDir()
+		keys := make([]ed25519.PrivateKey, 8)
+		errs := make([]error, 8)
+		var wg sync.WaitGroup
+		for i := range keys {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				keys[i], errs[i] = LoadOrCreateKey(dir)
+			}()
+		}
+		wg.Wait()
+		for i := range keys {
+			if errs[i] != nil {
+				t.Fatalf("call %d: %v", i, errs[i])
+			}
+			if !keys[i].Equal(keys[0]) {
+				t.Fatalf("call %d got a different key", i)
+			}
 		}
 	}
 }

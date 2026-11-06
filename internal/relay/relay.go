@@ -278,6 +278,9 @@ func recvFirst[T any](ctx context.Context, recv func() (T, error), wait time.Dur
 	var zero T
 	select {
 	case r := <-got:
+		if errors.Is(r.err, io.EOF) {
+			return zero, status.Error(codes.InvalidArgument, "the stream closed before opening")
+		}
 		if r.err != nil {
 			return zero, status.Convert(r.err).Err()
 		}

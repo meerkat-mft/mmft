@@ -21,6 +21,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"mmft.dev/mmft/internal/newfile"
 )
 
 const (
@@ -89,33 +91,15 @@ func Create(dir string, now time.Time) (*Authority, error) {
 		return nil, err
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
-	if err := writeNew(filepath.Join(dir, caKeyFile), keyPEM, 0o600); err != nil {
+	if err := newfile.Write(filepath.Join(dir, caKeyFile), keyPEM, 0o600); err != nil {
 		return nil, err
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	if err := writeNew(filepath.Join(dir, caCertFile), certPEM, 0o644); err != nil {
+	if err := newfile.Write(filepath.Join(dir, caCertFile), certPEM, 0o644); err != nil {
 		_ = os.Remove(filepath.Join(dir, caKeyFile))
 		return nil, err
 	}
 	return &Authority{cert: cert, key: key}, nil
-}
-
-func writeNew(path string, data []byte, mode os.FileMode) error {
-	f, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return err
-	}
-	return f.Close()
 }
 
 // Load reads a CA from dir.
