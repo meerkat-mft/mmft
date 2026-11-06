@@ -4,13 +4,13 @@ A local test lab in Docker containers, which runs on one laptop. Each script sta
 
 - `lab/smoke.sh` checks the networks, filesystems, and restarts that later failure tests rely on.
 - `lab/enroll.sh` enrolls both agents unattended, as a deployment tool would: `mmft agent token`, `mmft-agent install`, `mmft-agent fingerprint --json`, `mmft agent approve --fingerprints`, and `mmft-agent identity`. It then checks that a used token, an expired token, and a changed fingerprint are refused. The fingerprints pass from the agents to the admin machine through the script, never through the orchestrator.
-- `lab/connect.sh` enrolls both agents and runs `mmft-agent run` on each. It checks that both stay connected, that they reconnect after `agent-a` and then the orchestrator restart, and that they renew their connection certificates before they expire (C1). The orchestrator issues 2-minute certificates for this, so the script takes about four minutes.
+- `lab/connect.sh` enrolls both agents, checks that both reach the relay, and runs `mmft-agent run` on each. It checks that both stay connected, that they reconnect after `agent-a` and then the orchestrator restart, and that they renew their connection certificates before they expire (C1). The orchestrator issues 2-minute certificates for this, so the script takes about four minutes.
 - `lab/lib.sh` holds the setup the scripts share.
 
 | Service | Networks | Purpose |
 | --- | --- | --- |
 | `orchestrator` | `core`, `site-a`, `site-b` | The orchestrator, which each script starts |
-| `relay` | `core`, `site-a`, `site-b` | Placeholder for the relay |
+| `relay` | `core`, `site-a`, `site-b` | The blind relay, which each script starts. Agents move files through it from the manual flow onwards |
 | `postgres` | `core` | Database |
 | `admin` | `core` | An administrator's machine, with the trust root and administrator key |
 | `agent-a` | `site-a` | Source agent |
@@ -18,7 +18,7 @@ A local test lab in Docker containers, which runs on one laptop. Each script sta
 
 All networks are internal. Agents can reach the orchestrator and relay, but not each other, Postgres, or the internet. Services run as an unprivileged user with a read-only filesystem. Each agent's spool is limited to 16 MB, so that full-disk tests are quick.
 
-The Postgres password, the admin API token, and the passphrase in `compose.yaml` and `enroll.sh` are lab placeholders. Agent keys and the connection CA live on volumes, so they survive a container restart. The admin machine keeps its keys in memory only.
+The Postgres password, the admin API token, and the passphrase in `compose.yaml` and `enroll.sh` are lab placeholders. Agent keys, the connection CA, and the relay's key live on volumes, so they survive a container restart. The admin machine keeps its keys in memory only.
 
 ## Limits
 

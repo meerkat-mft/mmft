@@ -1,19 +1,22 @@
 syntax = "proto3";
 
 // Package mmft.relay.v1 moves sealed files between agents. Draft for M1. The
-// relay sees only sealed bytes and stores nothing.
+// relay sees only sealed bytes and stores nothing. See ADR 0020.
 package mmft.relay.v1;
 
 option go_package = "mmft.dev/mmft/gen/relay/v1;relayv1";
 
 // RelayService pairs a sending agent with a receiving agent for one delivery.
-// Both sides connect outbound, and neither accepts a connection.
+// Both sides connect outbound, and neither accepts a connection. Each side
+// authenticates with its connection certificate and a relay ticket for its
+// role.
 service RelayService {
   // Send streams a sealed file. The first message must be a SendOpen.
   rpc Send(stream SendRequest) returns (stream SendResponse);
 
-  // Receive streams a sealed file. The first message states where to resume.
-  rpc Receive(ReceiveRequest) returns (stream ReceiveResponse);
+  // Receive streams a sealed file. The first message must be a ReceiveOpen,
+  // which states where to resume.
+  rpc Receive(stream ReceiveRequest) returns (stream ReceiveResponse);
 }
 
 message SendRequest {
@@ -24,6 +27,7 @@ message SendRequest {
 }
 
 message SendOpen {
+  // A SignedTicket for the send role.
   bytes ticket = 1;
   string delivery_id = 2;
   uint64 total_bytes = 3;
@@ -39,6 +43,15 @@ message SendResponse {
 }
 
 message ReceiveRequest {
+  oneof message {
+    ReceiveOpen open = 1;
+    // Bytes of the sealed file now safely in the receiver's spool.
+    uint64 written_bytes = 2;
+  }
+}
+
+message ReceiveOpen {
+  // A SignedTicket for the receive role.
   bytes ticket = 1;
   string delivery_id = 2;
   // Bytes of the sealed file already in the receiver's spool.
@@ -47,4 +60,33 @@ message ReceiveRequest {
 
 message ReceiveResponse {
   bytes data = 1;
+}
+
+// SignedTicket is the ticket an agent presents. The signature is Ed25519 by the
+// orchestrator's relay ticket key, over a fixed context string followed by the
+// payload bytes. Agents treat it as opaque.
+message SignedTicket {
+  // A serialized TicketPayload.
+  bytes payload = 1;
+  bytes signature = 2;
+}
+
+// TicketPayload says which agent may take which side of one delivery.
+message TicketPayload {
+  uint32 version = 1;
+  string delivery_id = 2;
+  TicketRole role = 3;
+  // The agent that holds the ticket, matched against its connection
+  // certificate.
+  string holder_agent_id = 4;
+  // The agent on the other side of the delivery.
+  string peer_agent_id = 5;
+  // Unix seconds after which the relay refuses the ticket.
+  int64 expires_at = 6;
+}
+
+enum TicketRole {
+  TICKET_ROLE_UNSPECIFIED = 0;
+  TICKET_ROLE_SEND = 1;
+  TICKET_ROLE_RECEIVE = 2;
 }

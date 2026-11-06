@@ -5,7 +5,7 @@
 // source: mmft/relay/v1/relay.proto
 
 // Package mmft.relay.v1 moves sealed files between agents. Draft for M1. The
-// relay sees only sealed bytes and stores nothing.
+// relay sees only sealed bytes and stores nothing. See ADR 0020.
 
 package relayv1
 
@@ -23,6 +23,55 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+type TicketRole int32
+
+const (
+	TicketRole_TICKET_ROLE_UNSPECIFIED TicketRole = 0
+	TicketRole_TICKET_ROLE_SEND        TicketRole = 1
+	TicketRole_TICKET_ROLE_RECEIVE     TicketRole = 2
+)
+
+// Enum value maps for TicketRole.
+var (
+	TicketRole_name = map[int32]string{
+		0: "TICKET_ROLE_UNSPECIFIED",
+		1: "TICKET_ROLE_SEND",
+		2: "TICKET_ROLE_RECEIVE",
+	}
+	TicketRole_value = map[string]int32{
+		"TICKET_ROLE_UNSPECIFIED": 0,
+		"TICKET_ROLE_SEND":        1,
+		"TICKET_ROLE_RECEIVE":     2,
+	}
+)
+
+func (x TicketRole) Enum() *TicketRole {
+	p := new(TicketRole)
+	*p = x
+	return p
+}
+
+func (x TicketRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TicketRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_mmft_relay_v1_relay_proto_enumTypes[0].Descriptor()
+}
+
+func (TicketRole) Type() protoreflect.EnumType {
+	return &file_mmft_relay_v1_relay_proto_enumTypes[0]
+}
+
+func (x TicketRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TicketRole.Descriptor instead.
+func (TicketRole) EnumDescriptor() ([]byte, []int) {
+	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{0}
+}
 
 type SendRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -107,10 +156,11 @@ func (*SendRequest_Open) isSendRequest_Message() {}
 func (*SendRequest_Data) isSendRequest_Message() {}
 
 type SendOpen struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ticket        []byte                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	DeliveryId    string                 `protobuf:"bytes,2,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
-	TotalBytes    uint64                 `protobuf:"varint,3,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A SignedTicket for the send role.
+	Ticket        []byte `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	DeliveryId    string `protobuf:"bytes,2,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
+	TotalBytes    uint64 `protobuf:"varint,3,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -251,11 +301,12 @@ func (*SendResponse_StartOffset) isSendResponse_Message() {}
 func (*SendResponse_AcknowledgedBytes) isSendResponse_Message() {}
 
 type ReceiveRequest struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Ticket     []byte                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	DeliveryId string                 `protobuf:"bytes,2,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
-	// Bytes of the sealed file already in the receiver's spool.
-	ResumeOffset  uint64 `protobuf:"varint,3,opt,name=resume_offset,json=resumeOffset,proto3" json:"resume_offset,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ReceiveRequest_Open
+	//	*ReceiveRequest_WrittenBytes
+	Message       isReceiveRequest_Message `protobuf_oneof:"message"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -290,21 +341,104 @@ func (*ReceiveRequest) Descriptor() ([]byte, []int) {
 	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ReceiveRequest) GetTicket() []byte {
+func (x *ReceiveRequest) GetMessage() isReceiveRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ReceiveRequest) GetOpen() *ReceiveOpen {
+	if x != nil {
+		if x, ok := x.Message.(*ReceiveRequest_Open); ok {
+			return x.Open
+		}
+	}
+	return nil
+}
+
+func (x *ReceiveRequest) GetWrittenBytes() uint64 {
+	if x != nil {
+		if x, ok := x.Message.(*ReceiveRequest_WrittenBytes); ok {
+			return x.WrittenBytes
+		}
+	}
+	return 0
+}
+
+type isReceiveRequest_Message interface {
+	isReceiveRequest_Message()
+}
+
+type ReceiveRequest_Open struct {
+	Open *ReceiveOpen `protobuf:"bytes,1,opt,name=open,proto3,oneof"`
+}
+
+type ReceiveRequest_WrittenBytes struct {
+	// Bytes of the sealed file now safely in the receiver's spool.
+	WrittenBytes uint64 `protobuf:"varint,2,opt,name=written_bytes,json=writtenBytes,proto3,oneof"`
+}
+
+func (*ReceiveRequest_Open) isReceiveRequest_Message() {}
+
+func (*ReceiveRequest_WrittenBytes) isReceiveRequest_Message() {}
+
+type ReceiveOpen struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A SignedTicket for the receive role.
+	Ticket     []byte `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	DeliveryId string `protobuf:"bytes,2,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
+	// Bytes of the sealed file already in the receiver's spool.
+	ResumeOffset  uint64 `protobuf:"varint,3,opt,name=resume_offset,json=resumeOffset,proto3" json:"resume_offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReceiveOpen) Reset() {
+	*x = ReceiveOpen{}
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReceiveOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReceiveOpen) ProtoMessage() {}
+
+func (x *ReceiveOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReceiveOpen.ProtoReflect.Descriptor instead.
+func (*ReceiveOpen) Descriptor() ([]byte, []int) {
+	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ReceiveOpen) GetTicket() []byte {
 	if x != nil {
 		return x.Ticket
 	}
 	return nil
 }
 
-func (x *ReceiveRequest) GetDeliveryId() string {
+func (x *ReceiveOpen) GetDeliveryId() string {
 	if x != nil {
 		return x.DeliveryId
 	}
 	return ""
 }
 
-func (x *ReceiveRequest) GetResumeOffset() uint64 {
+func (x *ReceiveOpen) GetResumeOffset() uint64 {
 	if x != nil {
 		return x.ResumeOffset
 	}
@@ -320,7 +454,7 @@ type ReceiveResponse struct {
 
 func (x *ReceiveResponse) Reset() {
 	*x = ReceiveResponse{}
-	mi := &file_mmft_relay_v1_relay_proto_msgTypes[4]
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -332,7 +466,7 @@ func (x *ReceiveResponse) String() string {
 func (*ReceiveResponse) ProtoMessage() {}
 
 func (x *ReceiveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_relay_v1_relay_proto_msgTypes[4]
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,7 +479,7 @@ func (x *ReceiveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiveResponse.ProtoReflect.Descriptor instead.
 func (*ReceiveResponse) Descriptor() ([]byte, []int) {
-	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{4}
+	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ReceiveResponse) GetData() []byte {
@@ -353,6 +487,151 @@ func (x *ReceiveResponse) GetData() []byte {
 		return x.Data
 	}
 	return nil
+}
+
+// SignedTicket is the ticket an agent presents. The signature is Ed25519 by the
+// orchestrator's relay ticket key, over a fixed context string followed by the
+// payload bytes. Agents treat it as opaque.
+type SignedTicket struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A serialized TicketPayload.
+	Payload       []byte `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	Signature     []byte `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignedTicket) Reset() {
+	*x = SignedTicket{}
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignedTicket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedTicket) ProtoMessage() {}
+
+func (x *SignedTicket) ProtoReflect() protoreflect.Message {
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignedTicket.ProtoReflect.Descriptor instead.
+func (*SignedTicket) Descriptor() ([]byte, []int) {
+	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SignedTicket) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *SignedTicket) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+// TicketPayload says which agent may take which side of one delivery.
+type TicketPayload struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Version    uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	DeliveryId string                 `protobuf:"bytes,2,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
+	Role       TicketRole             `protobuf:"varint,3,opt,name=role,proto3,enum=mmft.relay.v1.TicketRole" json:"role,omitempty"`
+	// The agent that holds the ticket, matched against its connection
+	// certificate.
+	HolderAgentId string `protobuf:"bytes,4,opt,name=holder_agent_id,json=holderAgentId,proto3" json:"holder_agent_id,omitempty"`
+	// The agent on the other side of the delivery.
+	PeerAgentId string `protobuf:"bytes,5,opt,name=peer_agent_id,json=peerAgentId,proto3" json:"peer_agent_id,omitempty"`
+	// Unix seconds after which the relay refuses the ticket.
+	ExpiresAt     int64 `protobuf:"varint,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TicketPayload) Reset() {
+	*x = TicketPayload{}
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TicketPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TicketPayload) ProtoMessage() {}
+
+func (x *TicketPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_mmft_relay_v1_relay_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TicketPayload.ProtoReflect.Descriptor instead.
+func (*TicketPayload) Descriptor() ([]byte, []int) {
+	return file_mmft_relay_v1_relay_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TicketPayload) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *TicketPayload) GetDeliveryId() string {
+	if x != nil {
+		return x.DeliveryId
+	}
+	return ""
+}
+
+func (x *TicketPayload) GetRole() TicketRole {
+	if x != nil {
+		return x.Role
+	}
+	return TicketRole_TICKET_ROLE_UNSPECIFIED
+}
+
+func (x *TicketPayload) GetHolderAgentId() string {
+	if x != nil {
+		return x.HolderAgentId
+	}
+	return ""
+}
+
+func (x *TicketPayload) GetPeerAgentId() string {
+	if x != nil {
+		return x.PeerAgentId
+	}
+	return ""
+}
+
+func (x *TicketPayload) GetExpiresAt() int64 {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return 0
 }
 
 var File_mmft_relay_v1_relay_proto protoreflect.FileDescriptor
@@ -373,17 +652,38 @@ const file_mmft_relay_v1_relay_proto_rawDesc = "" +
 	"\fSendResponse\x12#\n" +
 	"\fstart_offset\x18\x01 \x01(\x04H\x00R\vstartOffset\x12/\n" +
 	"\x12acknowledged_bytes\x18\x02 \x01(\x04H\x00R\x11acknowledgedBytesB\t\n" +
-	"\amessage\"n\n" +
-	"\x0eReceiveRequest\x12\x16\n" +
+	"\amessage\"t\n" +
+	"\x0eReceiveRequest\x120\n" +
+	"\x04open\x18\x01 \x01(\v2\x1a.mmft.relay.v1.ReceiveOpenH\x00R\x04open\x12%\n" +
+	"\rwritten_bytes\x18\x02 \x01(\x04H\x00R\fwrittenBytesB\t\n" +
+	"\amessage\"k\n" +
+	"\vReceiveOpen\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\fR\x06ticket\x12\x1f\n" +
 	"\vdelivery_id\x18\x02 \x01(\tR\n" +
 	"deliveryId\x12#\n" +
 	"\rresume_offset\x18\x03 \x01(\x04R\fresumeOffset\"%\n" +
 	"\x0fReceiveResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data2\x9f\x01\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"F\n" +
+	"\fSignedTicket\x12\x18\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\"\xe4\x01\n" +
+	"\rTicketPayload\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1f\n" +
+	"\vdelivery_id\x18\x02 \x01(\tR\n" +
+	"deliveryId\x12-\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x19.mmft.relay.v1.TicketRoleR\x04role\x12&\n" +
+	"\x0fholder_agent_id\x18\x04 \x01(\tR\rholderAgentId\x12\"\n" +
+	"\rpeer_agent_id\x18\x05 \x01(\tR\vpeerAgentId\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x06 \x01(\x03R\texpiresAt*X\n" +
+	"\n" +
+	"TicketRole\x12\x1b\n" +
+	"\x17TICKET_ROLE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10TICKET_ROLE_SEND\x10\x01\x12\x17\n" +
+	"\x13TICKET_ROLE_RECEIVE\x10\x022\xa1\x01\n" +
 	"\fRelayService\x12C\n" +
-	"\x04Send\x12\x1a.mmft.relay.v1.SendRequest\x1a\x1b.mmft.relay.v1.SendResponse(\x010\x01\x12J\n" +
-	"\aReceive\x12\x1d.mmft.relay.v1.ReceiveRequest\x1a\x1e.mmft.relay.v1.ReceiveResponse0\x01B$Z\"mmft.dev/mmft/gen/relay/v1;relayv1b\x06proto3"
+	"\x04Send\x12\x1a.mmft.relay.v1.SendRequest\x1a\x1b.mmft.relay.v1.SendResponse(\x010\x01\x12L\n" +
+	"\aReceive\x12\x1d.mmft.relay.v1.ReceiveRequest\x1a\x1e.mmft.relay.v1.ReceiveResponse(\x010\x01B$Z\"mmft.dev/mmft/gen/relay/v1;relayv1b\x06proto3"
 
 var (
 	file_mmft_relay_v1_relay_proto_rawDescOnce sync.Once
@@ -397,25 +697,32 @@ func file_mmft_relay_v1_relay_proto_rawDescGZIP() []byte {
 	return file_mmft_relay_v1_relay_proto_rawDescData
 }
 
-var file_mmft_relay_v1_relay_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_mmft_relay_v1_relay_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_mmft_relay_v1_relay_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_mmft_relay_v1_relay_proto_goTypes = []any{
-	(*SendRequest)(nil),     // 0: mmft.relay.v1.SendRequest
-	(*SendOpen)(nil),        // 1: mmft.relay.v1.SendOpen
-	(*SendResponse)(nil),    // 2: mmft.relay.v1.SendResponse
-	(*ReceiveRequest)(nil),  // 3: mmft.relay.v1.ReceiveRequest
-	(*ReceiveResponse)(nil), // 4: mmft.relay.v1.ReceiveResponse
+	(TicketRole)(0),         // 0: mmft.relay.v1.TicketRole
+	(*SendRequest)(nil),     // 1: mmft.relay.v1.SendRequest
+	(*SendOpen)(nil),        // 2: mmft.relay.v1.SendOpen
+	(*SendResponse)(nil),    // 3: mmft.relay.v1.SendResponse
+	(*ReceiveRequest)(nil),  // 4: mmft.relay.v1.ReceiveRequest
+	(*ReceiveOpen)(nil),     // 5: mmft.relay.v1.ReceiveOpen
+	(*ReceiveResponse)(nil), // 6: mmft.relay.v1.ReceiveResponse
+	(*SignedTicket)(nil),    // 7: mmft.relay.v1.SignedTicket
+	(*TicketPayload)(nil),   // 8: mmft.relay.v1.TicketPayload
 }
 var file_mmft_relay_v1_relay_proto_depIdxs = []int32{
-	1, // 0: mmft.relay.v1.SendRequest.open:type_name -> mmft.relay.v1.SendOpen
-	0, // 1: mmft.relay.v1.RelayService.Send:input_type -> mmft.relay.v1.SendRequest
-	3, // 2: mmft.relay.v1.RelayService.Receive:input_type -> mmft.relay.v1.ReceiveRequest
-	2, // 3: mmft.relay.v1.RelayService.Send:output_type -> mmft.relay.v1.SendResponse
-	4, // 4: mmft.relay.v1.RelayService.Receive:output_type -> mmft.relay.v1.ReceiveResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 0: mmft.relay.v1.SendRequest.open:type_name -> mmft.relay.v1.SendOpen
+	5, // 1: mmft.relay.v1.ReceiveRequest.open:type_name -> mmft.relay.v1.ReceiveOpen
+	0, // 2: mmft.relay.v1.TicketPayload.role:type_name -> mmft.relay.v1.TicketRole
+	1, // 3: mmft.relay.v1.RelayService.Send:input_type -> mmft.relay.v1.SendRequest
+	4, // 4: mmft.relay.v1.RelayService.Receive:input_type -> mmft.relay.v1.ReceiveRequest
+	3, // 5: mmft.relay.v1.RelayService.Send:output_type -> mmft.relay.v1.SendResponse
+	6, // 6: mmft.relay.v1.RelayService.Receive:output_type -> mmft.relay.v1.ReceiveResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_mmft_relay_v1_relay_proto_init() }
@@ -431,18 +738,23 @@ func file_mmft_relay_v1_relay_proto_init() {
 		(*SendResponse_StartOffset)(nil),
 		(*SendResponse_AcknowledgedBytes)(nil),
 	}
+	file_mmft_relay_v1_relay_proto_msgTypes[3].OneofWrappers = []any{
+		(*ReceiveRequest_Open)(nil),
+		(*ReceiveRequest_WrittenBytes)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mmft_relay_v1_relay_proto_rawDesc), len(file_mmft_relay_v1_relay_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   5,
+			NumEnums:      1,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_mmft_relay_v1_relay_proto_goTypes,
 		DependencyIndexes: file_mmft_relay_v1_relay_proto_depIdxs,
+		EnumInfos:         file_mmft_relay_v1_relay_proto_enumTypes,
 		MessageInfos:      file_mmft_relay_v1_relay_proto_msgTypes,
 	}.Build()
 	File_mmft_relay_v1_relay_proto = out.File

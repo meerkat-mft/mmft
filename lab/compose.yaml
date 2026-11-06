@@ -39,6 +39,11 @@ services:
     <<: *service
     hostname: relay
     networks: [site-a, site-b, core]
+    environment:
+      MMFT_RELAY_DIR: /var/lib/mmft/relay
+      MMFT_CONNECTION_CA: /var/lib/mmft/relay/connection-ca.crt
+    volumes:
+      - relay:/var/lib/mmft/relay
 
   postgres:
     image: postgres:18-alpine
@@ -81,6 +86,7 @@ services:
 # Keys and state survive a container restart, as on a real host.
 volumes:
   orchestrator-ca:
+  relay:
   agent-a:
   agent-b:
 

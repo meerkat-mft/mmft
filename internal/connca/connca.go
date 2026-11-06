@@ -171,6 +171,12 @@ func Fingerprint(cert *x509.Certificate) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// CertificatePEM returns the CA certificate, which the relay uses to check
+// agents' connection certificates.
+func (a *Authority) CertificatePEM() []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: a.cert.Raw})
+}
+
 // Pool returns a pool holding only this CA.
 func (a *Authority) Pool() *x509.CertPool {
 	pool := x509.NewCertPool()
