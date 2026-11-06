@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -52,6 +53,9 @@ type limits struct {
 	// open. Idle expiry never fires while a stream is open, so without this a
 	// peer could hold a stream that never sends its request for ever.
 	connectionAge, connectionAgeGrace time.Duration
+	// streamSilence closes an agent stream that sends nothing for this long.
+	// Agents send a heartbeat well within it.
+	streamSilence time.Duration
 	// readTimeout, writeTimeout, and idleTimeout bound one REST request, one
 	// response, and the keep-alive wait between requests.
 	readTimeout, writeTimeout, idleTimeout time.Duration
@@ -61,10 +65,11 @@ var defaultLimits = limits{
 	maxConnections: 1024,
 	maxStreams:     32,
 	connectionIdle: 5 * time.Minute,
-	// Agents only make short unary calls today. A future long-lived stream
-	// reconnects once an hour, which gRPC clients do on their own.
+	// An agent's stream ends after an hour, and `mmft-agent run` opens a new
+	// one at once.
 	connectionAge:      time.Hour,
 	connectionAgeGrace: 5 * time.Minute,
+	streamSilence:      90 * time.Second,
 	readTimeout:        30 * time.Second,
 	writeTimeout:       30 * time.Second,
 	idleTimeout:        60 * time.Second,
@@ -78,7 +83,10 @@ type Config struct {
 	Names []string
 	// AdminTokenSHA256 is the hex hash of the bootstrap token from ADR 0017.
 	AdminTokenSHA256 string
-	Now              func() time.Time
+	// ConnectionLifetime is how long agent connection certificates last. Zero
+	// means connca.ConnectionLifetime. The lab sets it short to test renewal.
+	ConnectionLifetime time.Duration
+	Now                func() time.Time
 }
 
 // Server holds the gRPC and REST handlers.
@@ -99,6 +107,12 @@ func New(cfg Config) (*Server, error) {
 	token, err := hex.DecodeString(cfg.AdminTokenSHA256)
 	if err != nil || len(token) != sha256.Size {
 		return nil, errors.New("server: the admin token hash must be 64 hex characters")
+	}
+	if cfg.ConnectionLifetime == 0 {
+		cfg.ConnectionLifetime = connca.ConnectionLifetime
+	}
+	if cfg.ConnectionLifetime < connca.MinConnectionLifetime || cfg.ConnectionLifetime > connca.ConnectionLifetime {
+		return nil, connca.ErrInvalidLifetime
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -160,8 +174,13 @@ func (s *Server) requireAgent(ctx context.Context, method string) error {
 	if err != nil {
 		return err
 	}
+	return s.checkAgent(ctx, id)
+}
+
+// checkAgent requires the agent to exist and not be revoked.
+func (s *Server) checkAgent(ctx context.Context, id string) error {
 	var agentStatus string
-	err = s.cfg.DB.QueryRow(ctx, `SELECT status FROM agents WHERE id = $1`, id).Scan(&agentStatus)
+	err := s.cfg.DB.QueryRow(ctx, `SELECT status FROM agents WHERE id = $1`, id).Scan(&agentStatus)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return status.Error(codes.Unauthenticated, "the certificate names an unknown agent")
@@ -175,19 +194,28 @@ func (s *Server) requireAgent(ctx context.Context, method string) error {
 
 // AgentFromContext returns the agent ID proven by the connection certificate.
 func AgentFromContext(ctx context.Context) (string, error) {
-	p, ok := peer.FromContext(ctx)
-	if !ok {
-		return "", status.Error(codes.Unauthenticated, "no connection information")
+	cert, err := peerCertificate(ctx)
+	if err != nil {
+		return "", err
 	}
-	info, ok := p.AuthInfo.(credentials.TLSInfo)
-	if !ok || len(info.State.VerifiedChains) == 0 {
-		return "", status.Error(codes.Unauthenticated, "a connection certificate is required")
-	}
-	id, err := connca.AgentID(info.State.VerifiedChains[0][0])
+	id, err := connca.AgentID(cert)
 	if err != nil {
 		return "", status.Error(codes.Unauthenticated, "the certificate does not identify an agent")
 	}
 	return id, nil
+}
+
+// peerCertificate returns the verified connection certificate of the caller.
+func peerCertificate(ctx context.Context) (*x509.Certificate, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "no connection information")
+	}
+	info, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(info.State.VerifiedChains) == 0 {
+		return nil, status.Error(codes.Unauthenticated, "a connection certificate is required")
+	}
+	return info.State.VerifiedChains[0][0], nil
 }
 
 func (s *Server) unaryAuth(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {

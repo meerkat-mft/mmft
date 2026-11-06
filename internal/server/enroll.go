@@ -140,7 +140,7 @@ func (e enrollment) reissue(ctx context.Context, tx pgx.Tx, agentID string, keys
 	if agentStatus == "revoked" || !bytes.Equal(ed, keys.Ed25519) || !bytes.Equal(ml, keys.MLDSA65) || recipient != keys.Recipient {
 		return errBadToken
 	}
-	cert, err := e.s.cfg.Authority.SignAgent(csr, agentID, now)
+	cert, err := e.s.cfg.Authority.SignAgent(csr, agentID, now, e.s.cfg.ConnectionLifetime)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "the certificate request is invalid")
 	}
@@ -235,7 +235,7 @@ func (e enrollment) Enroll(ctx context.Context, req *agentv1.EnrollRequest) (*ag
 			VALUES ($1, $2, $3, $4)`, agentID, keys.Ed25519, keys.MLDSA65, keys.Recipient); err != nil {
 			return err
 		}
-		cert, err := e.s.cfg.Authority.SignAgent(req.GetCertificateRequest(), agentID, now)
+		cert, err := e.s.cfg.Authority.SignAgent(req.GetCertificateRequest(), agentID, now, e.s.cfg.ConnectionLifetime)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, "the certificate request is invalid")
 		}

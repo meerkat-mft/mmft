@@ -1,6 +1,7 @@
 // Command mmft-orchestrator runs the orchestrator. Settings come from the
 // environment: MMFT_DATABASE_URL, MMFT_CA_DIR, MMFT_SERVER_NAMES (comma separated),
-// MMFT_ADMIN_TOKEN_SHA256, MMFT_GRPC_LISTEN, and MMFT_API_LISTEN.
+// MMFT_ADMIN_TOKEN_SHA256, MMFT_GRPC_LISTEN, MMFT_API_LISTEN, and
+// MMFT_CONNECTION_LIFETIME, a Go duration that only the lab sets short.
 package main
 
 import (
@@ -95,6 +96,18 @@ func listenAddress(name, fallback string) string {
 	return fallback
 }
 
+// connectionLifetime reads MMFT_CONNECTION_LIFETIME. Unset means the default.
+func connectionLifetime(v string) (time.Duration, error) {
+	if v == "" {
+		return connca.ConnectionLifetime, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < connca.MinConnectionLifetime || d > connca.ConnectionLifetime {
+		return 0, fmt.Errorf("MMFT_CONNECTION_LIFETIME must be a duration from %v to %v", connca.MinConnectionLifetime, connca.ConnectionLifetime)
+	}
+	return d, nil
+}
+
 func serve() error {
 	ca, err := connca.Load(os.Getenv("MMFT_CA_DIR"))
 	if err != nil {
@@ -111,11 +124,16 @@ func serve() error {
 		return err
 	}
 	defer pool.Close()
+	lifetime, err := connectionLifetime(os.Getenv("MMFT_CONNECTION_LIFETIME"))
+	if err != nil {
+		return err
+	}
 	srv, err := server.New(server.Config{
-		Authority:        ca,
-		DB:               pool,
-		Names:            strings.Split(os.Getenv("MMFT_SERVER_NAMES"), ","),
-		AdminTokenSHA256: os.Getenv("MMFT_ADMIN_TOKEN_SHA256"),
+		Authority:          ca,
+		DB:                 pool,
+		Names:              strings.Split(os.Getenv("MMFT_SERVER_NAMES"), ","),
+		AdminTokenSHA256:   os.Getenv("MMFT_ADMIN_TOKEN_SHA256"),
+		ConnectionLifetime: lifetime,
 	})
 	if err != nil {
 		return err

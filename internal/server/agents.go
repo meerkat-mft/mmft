@@ -12,10 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
-	agentv1 "mmft.dev/mmft/gen/agent/v1"
 	"mmft.dev/mmft/internal/statement"
 	"mmft.dev/mmft/internal/trust"
 )
@@ -40,21 +37,28 @@ type agentItem struct {
 	Status            string      `json:"status"`
 	IdentityExpiresAt *time.Time  `json:"identity_expires_at,omitempty"`
 	PublicKeys        *publicKeys `json:"public_keys,omitempty"`
+	// AgentVersion and LastSeenAt come from the agent's stream, so they are
+	// absent until it first connects. The version is what the agent reported.
+	AgentVersion *string    `json:"agent_version,omitempty"`
+	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
 }
 
-// agentSelect reads an agent with its active identity's keys, for scanAgent.
+// agentSelect reads an agent with its active identity's keys and its
+// presence, for scanAgent.
 const agentSelect = `
 		SELECT a.id, a.name, w.name, a.status, i.not_after,
-		       i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient
+		       i.ed25519_public_key, i.mldsa65_public_key, i.encryption_recipient,
+		       p.agent_version, p.last_seen_at
 		FROM agents a
 		JOIN workspaces w ON w.id = a.workspace_id
-		LEFT JOIN agent_identities i ON i.agent_id = a.id AND i.revoked_at IS NULL`
+		LEFT JOIN agent_identities i ON i.agent_id = a.id AND i.revoked_at IS NULL
+		LEFT JOIN agent_presence p ON p.agent_id = a.id`
 
 func scanAgent(row pgx.Row) (agentItem, error) {
 	var item agentItem
 	var ed, ml []byte
 	var recipient *string
-	if err := row.Scan(&item.ID, &item.Name, &item.Workspace, &item.Status, &item.IdentityExpiresAt, &ed, &ml, &recipient); err != nil {
+	if err := row.Scan(&item.ID, &item.Name, &item.Workspace, &item.Status, &item.IdentityExpiresAt, &ed, &ml, &recipient, &item.AgentVersion, &item.LastSeenAt); err != nil {
 		return agentItem{}, err
 	}
 	if recipient != nil {
@@ -254,29 +258,4 @@ func storeIdentity(ctx context.Context, tx pgx.Tx, claim trust.IdentityClaim, id
 	}
 	_, err = tx.Exec(ctx, `UPDATE agents SET status = 'approved' WHERE id = $1`, claim.AgentID)
 	return err
-}
-
-type agentService struct {
-	agentv1.UnimplementedAgentServiceServer
-	s *Server
-}
-
-// GetIdentity returns the caller's own identity statement, as stored.
-func (a agentService) GetIdentity(ctx context.Context, _ *agentv1.GetIdentityRequest) (*agentv1.GetIdentityResponse, error) {
-	id, err := AgentFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var envelope []byte
-	err = a.s.cfg.DB.QueryRow(ctx, `
-		SELECT st.envelope FROM agent_identities i
-		JOIN signed_statements st ON st.id = i.identity_statement_id
-		WHERE i.agent_id = $1 AND i.revoked_at IS NULL`, id).Scan(&envelope)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, status.Error(codes.NotFound, "the agent is not approved yet")
-	}
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, "could not read the identity")
-	}
-	return &agentv1.GetIdentityResponse{IdentityStatement: envelope}, nil
 }
