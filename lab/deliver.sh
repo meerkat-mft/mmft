@@ -16,20 +16,8 @@ setup_lab
 work=$(mktemp -d)
 trap 'rm -rf "$work"; cleanup' EXIT
 
-echo "Enrolling and approving both agents..."
-for host in agent-a agent-b; do
-  token "$host" | field token | put "$host" "$spool/token"
-  install "$host" "$host" "$state" >/dev/null
-  in_lab "$host" mmft-agent fingerprint --dir "$state" --json >>"$work/fingerprints.json"
-done
-approve "$work/fingerprints.json" >/dev/null
-
-echo "Starting both agents with an outbox and inbox..."
-for host in agent-a agent-b; do
-  in_lab "$host" mkdir -p "$spool/sealed"
-  docker compose exec -d -T "$host" sh -c \
-    "exec mmft-agent run --dir $state --outbox $outbox --inbox $inbox --spool $spool/sealed >>$spool/run.log 2>&1"
-done
+enroll_both "$work"
+run_with_boxes
 
 # A file whose lines all carry a random marker, so any copy of the plaintext is
 # easy to find.
@@ -45,18 +33,7 @@ if in_lab agent-a grep -q -F "$marker" "$outbox/$name"; then pass "$label"; else
 
 echo "Sending $name from agent-a to agent-b..."
 label="mmft delivery send --wait succeeds"
-send() {
-  in_lab admin mmft delivery send --api orchestrator:7444 --ca-fingerprint "$ca_fp" --token-file "$admin/api-token" \
-    --workspace lab --from agent-a --to agent-b --file "$name" --wait --timeout 2m
-}
-# The agents may still be connecting, which the API refuses with 409.
-ok=
-for _ in $(seq 1 30); do
-  if send >"$work/run.json" 2>"$work/send.err"; then ok=1; break; fi
-  grep -q 409 "$work/send.err" || break
-  sleep 1
-done
-if [ -n "$ok" ]; then pass "$label"; else fail "$label"; cat "$work/send.err" "$work/run.json"; fi
+if send_file "$name" "$work/run.json"; then pass "$label"; else fail "$label"; cat "$work/run.json.err" "$work/run.json"; fi
 
 label="the run succeeded"
 if grep -q '"status": "succeeded"' "$work/run.json"; then pass "$label"; else fail "$label"; fi

@@ -6,8 +6,10 @@ A local test lab in Docker containers, which runs on one laptop. Each script sta
 - `lab/enroll.sh` enrolls both agents unattended, as a deployment tool would: `mmft agent token`, `mmft-agent install`, `mmft-agent fingerprint --json`, `mmft agent approve --fingerprints`, and `mmft-agent identity`. It then checks that a used token, an expired token, and a changed fingerprint are refused. The fingerprints pass from the agents to the admin machine through the script, never through the orchestrator.
 - `lab/connect.sh` enrolls both agents, checks that both reach the relay, and runs `mmft-agent run` on each. It checks that both stay connected, that they reconnect after `agent-a` and then the orchestrator restart, and that they renew their connection certificates before they expire (C1). The orchestrator issues 2-minute certificates for this, so the script takes about four minutes.
 - `lab/deliver.sh` enrolls both agents, runs them with an outbox and inbox, and moves a file from `agent-a` to `agent-b` with `mmft delivery send`, through the test relay. It checks that the file arrives unchanged with both signed statements, that the relay forwarded exactly the sealed file and no plaintext, that the orchestrator holds none of the file and stores its name only in `delivery_files`, and that both spools are empty.
+- `lab/tamper.sh` runs failure tests T1, T2, and T3. The test relay plays a hostile relay that alters, truncates, and then swaps sealed files. Each time it checks that `agent-b` refuses the file with a stable error code, decrypts and places nothing, and leaves both spools empty. A first, clean delivery shows the hostile relay forwards a file intact when told to.
+- `lab/m1.sh` demonstrates M1 with one command. It runs every script above in turn and reports each result. It takes about five minutes.
 - `lab/lib.sh` holds the setup the scripts share.
-- `lab/mmft-testrelay` is the lab's test relay: the real relay, plus a copy of every forwarded byte for checks. It is built only into the lab image.
+- `lab/mmft-testrelay` is the lab's test relay, built only into the lab image. By default it is the real relay, plus a copy of every forwarded byte for checks. With `MMFT_RELAY_TAMPER=on` it plays a hostile relay for `tamper.sh`, in the mode named in `tamper-mode` in its directory.
 
 | Service | Networks | Purpose |
 | --- | --- | --- |
@@ -47,8 +49,8 @@ Every milestone must pass the tests that apply to what it builds. Each test star
 | C1 | Connection certificate expired | Short lifetime in the lab | The agent renews, or reports the failure clearly | M1 |
 | C2 | Agent identity expired | Short lifetime in the lab | The agent refuses work and raises an alert | M2 |
 | T1 | Sealed file altered at the relay | Test relay that flips a byte | The hash check fails, and nothing is decrypted | M1 |
-| T2 | Sealed file truncated | Test relay that drops the end | The hash check fails, and nothing is decrypted | M1 |
-| T3 | Sealed file swapped from another delivery | Test relay that replays a file | The signed manifest check fails | M1 |
+| T2 | Sealed file truncated | Test relay that drops the end | The destination refuses the short file, because the signed manifest gives its size, and nothing is decrypted | M1 |
+| T3 | Sealed file swapped from another delivery | Test relay that replays a file | The hash in the signed manifest doesn't match, and nothing is decrypted | M1 |
 | A1 | Flow outside the allowlist | Approve a flow with a blocked path | The flow fails with a clear reason, and doesn't partly run | M2 |
 | A2 | Older flow version replayed | Offer a lower approved version | The agent refuses it | M2 |
 | A3 | Hostile file name | Path traversal and control characters | The name is rejected or safely handled | M2 |

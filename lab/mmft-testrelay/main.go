@@ -1,8 +1,13 @@
 // Command mmft-testrelay is the lab's test relay. Never use it outside the lab.
-// It runs the real relay with the settings `mmft-relay serve` takes, and also
-// writes every byte it forwards to MMFT_RELAY_CAPTURE_DIR, one file per
-// delivery, so the lab can check that the relay sees only sealed bytes. The
-// real relay stores nothing.
+//
+// By default it runs the real relay with the settings `mmft-relay serve` takes,
+// and also writes every byte it forwards to MMFT_RELAY_CAPTURE_DIR, one file
+// per delivery, so the lab can check that the relay sees only sealed bytes.
+// The real relay stores nothing.
+//
+// With MMFT_RELAY_TAMPER=on it plays a hostile relay instead, which alters,
+// truncates, or swaps sealed files as the tamper-mode file in MMFT_RELAY_DIR
+// says, for failure tests T1 to T3.
 package main
 
 import (
@@ -30,6 +35,9 @@ func main() {
 }
 
 func serve(ctx context.Context) error {
+	if os.Getenv("MMFT_RELAY_TAMPER") == "on" {
+		return serveTamperer(ctx)
+	}
 	capture := os.Getenv("MMFT_RELAY_CAPTURE_DIR")
 	if capture == "" {
 		return errors.New("MMFT_RELAY_CAPTURE_DIR is not set")
