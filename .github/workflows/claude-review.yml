@@ -67,8 +67,12 @@ jobs:
             exit 1
           fi
       # The skill posts nothing when it skips a pull request it has already
-      # reviewed, so this passes once any review by Claude is on it.
+      # reviewed, so this passes once any review by Claude is on it. Like the
+      # step above, it runs only when Claude ran: the action skips itself on a
+      # pull request that changes this file, because its token is issued only
+      # for the workflow on main.
       - name: Check a review was posted
+        if: steps.review.outputs.execution_file != ''
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
