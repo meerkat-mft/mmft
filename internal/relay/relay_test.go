@@ -551,7 +551,7 @@ func TestLimits(t *testing.T) {
 		a, b := r.agent(t), r.agent(t)
 		d := newDelivery()
 		recv := openReceive(t, r.client(t, b), r.ticket(t, d, relayticket.Receive, b, a), d, 0)
-		big := make([]byte, 1024+openOverhead+1)
+		big := make([]byte, 1025)
 		sent := runSend(openSend(t, r.client(t, a), r.ticket(t, d, relayticket.Send, a, b), d, uint64(len(big))), big, len(big))
 		wantCode(t, (<-sent).err, codes.ResourceExhausted)
 		_, _ = receiveAll(recv, nil)
@@ -591,5 +591,86 @@ func TestIdentityIsNotReplaced(t *testing.T) {
 	}
 	if _, err := CreateIdentity(dir, time.Now()); err == nil {
 		t.Fatal("an existing identity was replaced")
+	}
+}
+
+func TestAReceiverThatStopsReadingIsReleased(t *testing.T) {
+	r := startRelay(t, Limits{Idle: 300 * time.Millisecond, MaxPerAgent: 1, PairWait: 200 * time.Millisecond}, nil)
+	a, b := r.agent(t), r.agent(t)
+	d := newDelivery()
+	// b opens its side and then never reads, so the relay's writes block once
+	// the stream's flow-control window is full.
+	_ = openReceive(t, r.client(t, b), r.ticket(t, d, relayticket.Receive, b, a), d, 0)
+	data := make([]byte, 64<<20)
+	_ = runSend(openSend(t, r.client(t, a), r.ticket(t, d, relayticket.Send, a, b), d, uint64(len(data))), data, 512<<10)
+	time.Sleep(time.Second)
+	// b's stream slot must be free again: its next stream waits for a sender
+	// instead of being refused for having too many open.
+	d2 := newDelivery()
+	_, err := receiveAll(openReceive(t, r.client(t, b), r.ticket(t, d2, relayticket.Receive, b, a), d2, 0), nil)
+	wantCode(t, err, codes.DeadlineExceeded)
+}
+
+func TestAnotherAgentCantReplaceASide(t *testing.T) {
+	r := startRelay(t, Limits{PairWait: 2 * time.Second}, nil)
+	a, b, c := r.agent(t), r.agent(t), r.agent(t)
+	d := newDelivery()
+	send := openSend(t, r.client(t, a), r.ticket(t, d, relayticket.Send, a, b), d, 3)
+	time.Sleep(50 * time.Millisecond)
+	// c holds a genuine send ticket for the same delivery and receiver.
+	_, _, err := sendAll(openSend(t, r.client(t, c), r.ticket(t, d, relayticket.Send, c, b), d, 3), []byte("bad"), 3)
+	wantCode(t, err, codes.PermissionDenied)
+	sent := runSend(send, []byte("abc"), 1)
+	got, err := receiveAll(openReceive(t, r.client(t, b), r.ticket(t, d, relayticket.Receive, b, a), d, 0), nil)
+	if err != nil || string(got) != "abc" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if res := <-sent; res.err != nil {
+		t.Fatal(res.err)
+	}
+}
+
+func TestAReconnectingAgentIsNotCountedTwice(t *testing.T) {
+	r := startRelay(t, Limits{MaxPerAgent: 1, PairWait: 2 * time.Second}, nil)
+	a, b := r.agent(t), r.agent(t)
+	d := newDelivery()
+	ticket := r.ticket(t, d, relayticket.Receive, b, a)
+	_ = openReceive(t, r.client(t, b), ticket, d, 0)
+	time.Sleep(50 * time.Millisecond)
+	fresh := openReceive(t, r.client(t, b), ticket, d, 0)
+	sent := runSend(openSend(t, r.client(t, a), r.ticket(t, d, relayticket.Send, a, b), d, 2), []byte("ok"), 1)
+	if got, err := receiveAll(fresh, nil); err != nil || string(got) != "ok" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if res := <-sent; res.err != nil {
+		t.Fatal(res.err)
+	}
+}
+
+func TestRelayNeedsTLS13(t *testing.T) {
+	r := startRelay(t, Limits{}, nil)
+	a := r.agent(t)
+	cfg := PinnedClient(r.fp, a.cert)
+	cfg.MinVersion, cfg.MaxVersion = tls.VersionTLS12, tls.VersionTLS12
+	cfg.NextProtos = []string{"h2"}
+	conn, err := tls.Dial("tcp", r.addr, cfg)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("the relay accepted TLS 1.2")
+	}
+}
+
+func TestPinWithoutAFingerprintRefusesEveryRelay(t *testing.T) {
+	r := startRelay(t, Limits{}, nil)
+	a := r.agent(t)
+	for _, fp := range [][]byte{nil, r.fp[:16]} {
+		conn, err := tls.Dial("tcp", r.addr, PinnedClient(fp, a.cert))
+		if err == nil {
+			_ = conn.Close()
+			t.Fatalf("connected with pin %x", fp)
+		}
+		if !errors.Is(err, ErrWrongRelay) {
+			t.Fatalf("got %v, want ErrWrongRelay", err)
+		}
 	}
 }

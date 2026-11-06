@@ -26,8 +26,13 @@ import (
 // relay's 1 MiB limit.
 const chunkSize = 256 << 10
 
-// ErrBadRelay is returned when the relay breaks the relay protocol.
-var ErrBadRelay = errors.New("agent: the relay broke the relay protocol")
+// Errors from sending and receiving through the relay.
+var (
+	ErrBadRelay = errors.New("agent: the relay broke the relay protocol")
+	// ErrSpoolTooLong means the partial file in the spool is longer than the
+	// sealed file, so it can't be resumed.
+	ErrSpoolTooLong = errors.New("agent: the spool file is longer than the sealed file")
+)
 
 // RelayConfig sets how sending or receiving through the relay retries. Zero values
 // get the same defaults as RunConfig.
@@ -138,7 +143,7 @@ func (t *relaySide) retry(ctx context.Context, attempt func(context.Context, rel
 
 // final reports whether retrying with the same ticket can't help.
 func final(err error) bool {
-	if errors.Is(err, ErrBadRelay) {
+	if errors.Is(err, ErrBadRelay) || errors.Is(err, ErrSpoolTooLong) {
 		return true
 	}
 	switch status.Code(err) {
@@ -256,13 +261,14 @@ func streamEnd[T any](recv func() (T, error), err error) error {
 	return err
 }
 
-// ReceiveFile receives a sealed file through the relay named in the ticket
-// into path, which must be in the agent's private spool. A partial file
-// already at path is kept, and the delivery resumes where it ends. Each
-// acknowledgement covers only bytes synced to disk. It returns once the
-// sender's whole file is in path, or ctx ends. Checking the file against its
-// signed manifest is the caller's job.
-func ReceiveFile(ctx context.Context, dir string, ticket *agentv1.RelayTicket, path string, cfg RelayConfig) error {
+// ReceiveFile receives a sealed file of size bytes through the relay named in
+// the ticket into path, which must be in the agent's private spool. The size
+// comes from the signed manifest, so the relay can't make the agent take more.
+// A partial file already at path is kept, and the delivery resumes where it
+// ends. Each acknowledgement covers only bytes synced to disk. It returns once
+// size bytes are in path, or ctx ends. Checking the file against its signed
+// manifest is the caller's job.
+func ReceiveFile(ctx context.Context, dir string, ticket *agentv1.RelayTicket, path string, size uint64, cfg RelayConfig) error {
 	t, err := newRelaySide(dir, ticket, cfg)
 	if err != nil {
 		return err
@@ -273,16 +279,19 @@ func ReceiveFile(ctx context.Context, dir string, ticket *agentv1.RelayTicket, p
 	}
 	defer func() { _ = f.Close() }()
 	return t.retry(ctx, func(ctx context.Context, client relayv1.RelayServiceClient) (bool, error) {
-		return t.receive(ctx, client, f)
+		return t.receive(ctx, client, f, size)
 	})
 }
 
-func (t *relaySide) receive(ctx context.Context, client relayv1.RelayServiceClient, f *os.File) (bool, error) {
+func (t *relaySide) receive(ctx context.Context, client relayv1.RelayServiceClient, f *os.File, size uint64) (bool, error) {
 	info, err := f.Stat()
 	if err != nil {
 		return false, err
 	}
 	offset := uint64(info.Size()) //nolint:gosec // a file size is never negative
+	if offset > size {
+		return false, ErrSpoolTooLong
+	}
 	start := offset
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -299,6 +308,9 @@ func (t *relaySide) receive(ctx context.Context, client relayv1.RelayServiceClie
 		if errors.Is(err, io.EOF) {
 			// The relay ends the stream cleanly only after the whole file is
 			// acknowledged.
+			if offset != size {
+				return offset > start, fmt.Errorf("%w: the stream ended before the whole file arrived", ErrBadRelay)
+			}
 			return offset > start, nil
 		}
 		if err != nil {
@@ -307,6 +319,9 @@ func (t *relaySide) receive(ctx context.Context, client relayv1.RelayServiceClie
 		chunk := resp.GetData()
 		if len(chunk) == 0 {
 			return offset > start, fmt.Errorf("%w: empty data", ErrBadRelay)
+		}
+		if uint64(len(chunk)) > size-offset {
+			return offset > start, fmt.Errorf("%w: more data than the file holds", ErrBadRelay)
 		}
 		if _, err := f.WriteAt(chunk, int64(offset)); err != nil { //nolint:gosec // offset is the file size
 			return offset > start, err

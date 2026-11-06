@@ -26,7 +26,7 @@ The signature covers a fixed context string followed by the payload. The relay a
 
 **Relay identity.** The relay has its own long-lived TLS key and a self-signed certificate. It gets no connection certificate. The orchestrator sends the SHA-256 of the relay's certificate in each `RelayTicket`, over the agent's authenticated stream, and the agent connects only to a relay that presents that certificate. The relay checks agents' connection certificates against the connection CA certificate, which is public. TLS 1.3 is required.
 
-**Pairing and resume.** Whichever side arrives first waits for the other. The receiver states how many bytes of the sealed file it already holds, and the sender starts there. The relay forwards one message at a time and keeps no copy. The receiver acknowledges bytes once they are synced to disk, and the relay passes the acknowledgements to the sender. A stream ends cleanly only when the receiver has acknowledged the whole file. A new stream for the same delivery and side replaces the old one, so a half-open connection doesn't block a resume.
+**Pairing and resume.** Whichever side arrives first waits for the other. The receiver states how many bytes of the sealed file it already holds, and the sender starts there. The relay forwards one message at a time and keeps no copy. The receiver acknowledges bytes once they are synced to disk, and the relay passes the acknowledgements to the sender. A stream ends cleanly only when the receiver has acknowledged the whole file. A new stream from the same agent, for the same delivery, side, and other agent, replaces the old one, so a half-open connection doesn't block a resume. Any other agent is refused. The receiving agent takes no more bytes than the size in the signed manifest.
 
 **Limits.**
 
@@ -56,6 +56,6 @@ The signature covers a fixed context string followed by the payload. The relay a
 - The relay stays stateless. Restarting it ends the pairs it holds, and their agents resume from their byte offsets.
 - The relay can't see revocations. A revoked agent can open relay streams until its ticket expires, up to 15 minutes, and a pair already forwarding runs to the end. The orchestrator issues no tickets to agents that aren't approved.
 - A compromised orchestrator can issue tickets and point agents at another relay, as it can already impersonate connections. File contents stay sealed end to end.
-- A compromised relay can drop, truncate, or alter bytes, or reuse a ticket within its expiry. The signed manifest and the sealed file hash catch every change, as [ADR 0010](0010-age-sealed-files.md) requires, and the lab's failure tests T1 to T3 check this.
+- A compromised relay can drop, truncate, or alter bytes. It can't use a ticket itself, because a ticket is worthless without the holder's connection key. The signed manifest and the sealed file hash catch every change, as [ADR 0010](0010-age-sealed-files.md) requires, and the lab's failure tests T1 to T3 check this.
 - Changing the relay's key means updating the hash in the orchestrator's settings. Agents get the new hash with their next ticket.
 - We'll revisit the limits once metrics show real throughput and concurrency, and add a per-agent bandwidth share if one agent can starve others.

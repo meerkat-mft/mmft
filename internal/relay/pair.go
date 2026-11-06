@@ -62,6 +62,13 @@ func (p *pairing) has(role relayticket.Role) bool {
 	return p.receiver != nil
 }
 
+func (p *pairing) side(role relayticket.Role) *half {
+	if role == relayticket.Send {
+		return p.sender
+	}
+	return p.receiver
+}
+
 func (p *pairing) only() *half {
 	if p.sender != nil {
 		return p.sender
@@ -133,13 +140,26 @@ func (s *Server) join(t relayticket.Ticket, total, offset uint64) (*pairing, *ha
 	h := &half{agent: t.Holder, peer: t.Peer, role: t.Role}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.perAgent[h.agent] >= s.cfg.Limits.MaxPerAgent {
+	p := s.pairings[t.DeliveryID]
+	var stale *half
+	if p != nil && p.has(t.Role) {
+		stale = p.side(t.Role)
+		// Only the same agent, for the same pair, may replace a side.
+		if stale.agent != h.agent || stale.peer != h.peer {
+			return nil, nil, status.Error(codes.PermissionDenied, "another agent holds this side of the delivery")
+		}
+	}
+	// A reconnecting agent's stale stream is about to end, so it doesn't count.
+	open := s.perAgent[h.agent]
+	if stale != nil {
+		open--
+	}
+	if open >= s.cfg.Limits.MaxPerAgent {
 		return nil, nil, status.Error(codes.ResourceExhausted, "the agent has too many relay streams open")
 	}
-	p := s.pairings[t.DeliveryID]
-	if p != nil && p.has(t.Role) {
-		// The agent named in the ticket is reconnecting, so the old stream is
-		// stale. The other side reconnects too, and the delivery resumes.
+	if stale != nil {
+		// The agent is reconnecting, so the old stream is stale. The other side
+		// reconnects too, and the delivery resumes.
 		p.end(status.Error(codes.Aborted, "a newer connection replaced this one"))
 		delete(s.pairings, t.DeliveryID)
 		p = nil
@@ -221,15 +241,16 @@ func (p *pairing) checkOffset() error {
 
 // runSender tells the sender where to start, takes its data, and passes on
 // the receiver's acknowledgements until the receiver has the whole file.
+// Writes to the sender happen in their own goroutine, so a sender that stops
+// reading can't keep the handler past the end of the pair: returning cancels
+// the stream, which unblocks any write.
 func (p *pairing) runSender(stream relayv1.RelayService_SendServer) error {
 	if err := p.checkOffset(); err != nil {
 		return err
 	}
-	if err := stream.Send(&relayv1.SendResponse{Message: &relayv1.SendResponse_StartOffset{StartOffset: p.offset}}); err != nil {
-		p.end(err)
-		return err
-	}
 	pumped := make(chan error, 1)
+	written := make(chan error, 1)
+	go func() { written <- p.writeAcks(stream) }()
 	go func() { pumped <- p.pump(stream) }()
 	for {
 		select {
@@ -239,12 +260,38 @@ func (p *pairing) runSender(stream relayv1.RelayService_SendServer) error {
 				return p.result()
 			}
 			pumped = nil
+		case err := <-written:
+			// The writer returns only after the pair ends, or on a failed write.
+			p.end(err)
+			return p.result()
+		case <-p.done:
+			if err := p.result(); err != nil {
+				return err
+			}
+			// Give the writer a bounded time to send the final acknowledgement.
+			select {
+			case err := <-written:
+				return err
+			case <-time.After(p.s.cfg.Limits.Idle):
+				return status.Error(codes.DeadlineExceeded, "the sender stopped reading")
+			}
+		}
+	}
+}
+
+// writeAcks sends the start offset and then each new acknowledgement. Once the
+// receiver has the whole file it sends the last one and returns nil.
+func (p *pairing) writeAcks(stream relayv1.RelayService_SendServer) error {
+	if err := stream.Send(&relayv1.SendResponse{Message: &relayv1.SendResponse_StartOffset{StartOffset: p.offset}}); err != nil {
+		return err
+	}
+	for {
+		select {
 		case <-p.ackSignal:
 			p.mu.Lock()
 			acked := p.acked
 			p.mu.Unlock()
 			if err := stream.Send(ack(acked)); err != nil {
-				p.end(err)
 				return err
 			}
 		case <-p.done:
@@ -280,6 +327,9 @@ func (p *pairing) pump(stream relayv1.RelayService_SendServer) error {
 		if len(chunk) == 0 {
 			return status.Error(codes.InvalidArgument, "expected data")
 		}
+		if len(chunk) > p.s.cfg.Limits.MaxChunk {
+			return status.Error(codes.ResourceExhausted, "the data message is too large")
+		}
 		if uint64(len(chunk)) > remaining {
 			return status.Error(codes.InvalidArgument, "the sender sent more than its total")
 		}
@@ -294,7 +344,9 @@ func (p *pairing) pump(stream relayv1.RelayService_SendServer) error {
 }
 
 // runReceiver sends the data on to the receiver and reads its
-// acknowledgements, until it has acknowledged the whole file.
+// acknowledgements, until it has acknowledged the whole file. As in runSender,
+// writes happen in their own goroutine, so a receiver that stops reading is
+// released when the idle limit ends the pair.
 func (p *pairing) runReceiver(stream relayv1.RelayService_ReceiveServer) error {
 	if err := p.checkOffset(); err != nil {
 		return err
@@ -304,24 +356,17 @@ func (p *pairing) runReceiver(stream relayv1.RelayService_ReceiveServer) error {
 		return nil
 	}
 	acks := make(chan error, 1)
+	written := make(chan error, 1)
 	go func() { acks <- p.readAcks(stream) }()
-	data := p.data
+	go func() { written <- p.writeData(stream) }()
 	for {
 		select {
-		case chunk, ok := <-data:
-			if !ok {
-				data = nil
-				continue
-			}
-			// Count the bytes before sending, so an acknowledgement can never
-			// arrive for bytes not yet counted.
-			p.mu.Lock()
-			p.forwarded += uint64(len(chunk))
-			p.mu.Unlock()
-			if err := stream.Send(&relayv1.ReceiveResponse{Data: chunk}); err != nil {
+		case err := <-written:
+			if err != nil {
 				p.end(err)
-				return err
+				return p.result()
 			}
+			written = nil
 		case err := <-acks:
 			if err != nil {
 				p.end(err)
@@ -330,6 +375,29 @@ func (p *pairing) runReceiver(stream relayv1.RelayService_ReceiveServer) error {
 			acks = nil
 		case <-p.done:
 			return p.result()
+		}
+	}
+}
+
+// writeData sends each chunk to the receiver until the sender's data ends or
+// the pair does.
+func (p *pairing) writeData(stream relayv1.RelayService_ReceiveServer) error {
+	for {
+		select {
+		case chunk, ok := <-p.data:
+			if !ok {
+				return nil
+			}
+			// Count the bytes before sending, so an acknowledgement can never
+			// arrive for bytes not yet counted.
+			p.mu.Lock()
+			p.forwarded += uint64(len(chunk))
+			p.mu.Unlock()
+			if err := stream.Send(&relayv1.ReceiveResponse{Data: chunk}); err != nil {
+				return err
+			}
+		case <-p.done:
+			return nil
 		}
 	}
 }

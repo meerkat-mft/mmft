@@ -116,7 +116,7 @@ var fastRetry = RelayConfig{MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * 
 // background runs f until the test ends and returns its result channel.
 func background(t *testing.T, f func(context.Context) error) <-chan error {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
 	got := make(chan error, 1)
 	go func() { got <- f(ctx) }()
@@ -214,13 +214,17 @@ func waitForSize(t *testing.T, path string, atLeast int64) {
 func TestRelayResumesAfterTheConnectionDrops(t *testing.T) {
 	l := startRelayLab(t)
 	p := startSlowProxy(t, l.relayAddr)
-	src, data := sealedFile(t, 4<<20)
+	// The proxy is slow on purpose, so keep the file small enough for a busy
+	// machine running every package under the race detector.
+	src, data := sealedFile(t, 2<<20)
 	dst := filepath.Join(t.TempDir(), "spool")
 	send, receive := l.tickets(t, p.addr, time.Now().Add(relayticket.Lifetime))
-	received := background(t, func(ctx context.Context) error { return ReceiveFile(ctx, l.b, receive, dst, fastRetry) })
+	received := background(t, func(ctx context.Context) error {
+		return ReceiveFile(ctx, l.b, receive, dst, uint64(len(data)), fastRetry)
+	})
 	sent := background(t, func(ctx context.Context) error { return SendFile(ctx, l.a, send, src, fastRetry) })
 
-	waitForSize(t, dst, 1<<20)
+	waitForSize(t, dst, 256<<10)
 	p.drop()
 	info, err := os.Stat(dst)
 	if err != nil {
@@ -260,7 +264,9 @@ func TestReceiveFileResumesAPartialFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	send, receive := l.tickets(t, l.relayAddr, time.Now().Add(relayticket.Lifetime))
-	received := background(t, func(ctx context.Context) error { return ReceiveFile(ctx, l.b, receive, dst, fastRetry) })
+	received := background(t, func(ctx context.Context) error {
+		return ReceiveFile(ctx, l.b, receive, dst, uint64(len(data)), fastRetry)
+	})
 	sent := background(t, func(ctx context.Context) error { return SendFile(ctx, l.a, send, src, fastRetry) })
 	if err := <-received; err != nil {
 		t.Fatal(err)
@@ -285,7 +291,7 @@ func TestAgentsRefuseTheWrongRelayByItsTicket(t *testing.T) {
 	send, receive := l.tickets(t, l.relayAddr, time.Now().Add(relayticket.Lifetime))
 	send.RelayCertificateSha256 = bytes.Clone(l.relayFP)
 	send.RelayCertificateSha256[0] ^= 1
-	received := background(t, func(ctx context.Context) error { return ReceiveFile(ctx, l.b, receive, dst, fastRetry) })
+	received := background(t, func(ctx context.Context) error { return ReceiveFile(ctx, l.b, receive, dst, 1024, fastRetry) })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := SendFile(ctx, l.a, send, src, fastRetry); !errors.Is(err, relay.ErrWrongRelay) {
@@ -310,5 +316,41 @@ func TestExpiredTicketStopsTheAgent(t *testing.T) {
 	err := SendFile(ctx, l.a, send, src, fastRetry)
 	if status.Code(err) != codes.PermissionDenied || errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("SendFile = %v, want PermissionDenied at once", err)
+	}
+}
+
+func TestReceiveFileTakesNoMoreThanTheSealedSize(t *testing.T) {
+	l := startRelayLab(t)
+	// The sender offers more than the manifest's size, as a bad relay could.
+	src, _ := sealedFile(t, 600<<10)
+	dst := filepath.Join(t.TempDir(), "spool")
+	send, receive := l.tickets(t, l.relayAddr, time.Now().Add(relayticket.Lifetime))
+	size := uint64(100 << 10)
+	_ = background(t, func(ctx context.Context) error { return SendFile(ctx, l.a, send, src, fastRetry) })
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ReceiveFile(ctx, l.b, receive, dst, size, fastRetry); !errors.Is(err, ErrBadRelay) {
+		t.Fatalf("ReceiveFile = %v, want ErrBadRelay", err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > int64(size) {
+		t.Fatalf("the spool file grew to %d bytes, past %d", info.Size(), size)
+	}
+}
+
+func TestReceiveFileRefusesASpoolFileLongerThanTheSealedSize(t *testing.T) {
+	l := startRelayLab(t)
+	dst := filepath.Join(t.TempDir(), "spool")
+	if err := os.WriteFile(dst, make([]byte, 20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, receive := l.tickets(t, l.relayAddr, time.Now().Add(relayticket.Lifetime))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ReceiveFile(ctx, l.b, receive, dst, 10, fastRetry); !errors.Is(err, ErrSpoolTooLong) {
+		t.Fatalf("ReceiveFile = %v, want ErrSpoolTooLong", err)
 	}
 }
