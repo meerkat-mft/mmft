@@ -72,6 +72,11 @@ func newCA(t *testing.T) *connca.Authority {
 
 func startRelay(t *testing.T, limits Limits, now func() time.Time) *testRelay {
 	t.Helper()
+	return startRelayWith(t, limits, now, nil)
+}
+
+func startRelayWith(t *testing.T, limits Limits, now func() time.Time, tap func(string, uint64, []byte)) *testRelay {
+	t.Helper()
 	ca := newCA(t)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -95,7 +100,7 @@ func startRelay(t *testing.T, limits Limits, now func() time.Time) *testRelay {
 		t.Fatal(err)
 	}
 	log := &syncBuffer{}
-	s, err := New(Config{Identity: identity, ConnectionCA: caCert, TicketKey: key.Public().(ed25519.PublicKey), Limits: limits, Log: log, Now: now})
+	s, err := New(Config{Identity: identity, ConnectionCA: caCert, TicketKey: key.Public().(ed25519.PublicKey), Limits: limits, Log: log, Now: now, Tap: tap})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,4 +742,41 @@ func TestAStreamClosedBeforeOpeningIsInvalid(t *testing.T) {
 	}
 	_, err = stream.Recv()
 	wantCode(t, err, codes.InvalidArgument)
+}
+
+func TestTapSeesEveryForwardedByteAtItsOffset(t *testing.T) {
+	var mu sync.Mutex
+	var offsets []uint64
+	var seen []byte
+	tap := func(_ string, offset uint64, chunk []byte) {
+		mu.Lock()
+		defer mu.Unlock()
+		offsets = append(offsets, offset)
+		seen = append(seen, chunk...)
+	}
+	r := startRelayWith(t, Limits{}, nil, tap)
+	a, b := r.agent(t), r.agent(t)
+	d := newDelivery()
+	data := []byte("the sealed bytes, resumed after ten")
+	recv := openReceive(t, r.client(t, b), r.ticket(t, d, relayticket.Receive, b, a), d, 10)
+	sent := runSend(openSend(t, r.client(t, a), r.ticket(t, d, relayticket.Send, a, b), d, uint64(len(data))), data, 4)
+	if _, err := receiveAll(recv, bytes.Clone(data[:10])); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-sent; res.err != nil {
+		t.Fatal(res.err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !bytes.Equal(seen, data[10:]) {
+		t.Fatalf("the tap saw %q", seen)
+	}
+	// The delivery resumed at 10, and each chunk follows the last.
+	want := uint64(10)
+	for _, off := range offsets {
+		if off != want {
+			t.Fatalf("offsets %v", offsets)
+		}
+		want += 4
+	}
 }

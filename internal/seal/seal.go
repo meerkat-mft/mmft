@@ -62,6 +62,20 @@ var freeSpace = freeBytes
 // it to change the sealed file in between.
 var afterHashCheck = func() {}
 
+// HasRoom fails with ErrNoSpace unless dir has need bytes free. The destination
+// checks before it receives a sealed file and decrypts it, so a large manifest
+// fails with a clear reason rather than filling the disk.
+func HasRoom(dir string, need uint64) error {
+	free, err := freeSpace(dir)
+	if err != nil {
+		return fmt.Errorf("seal: check free space: %w", pathless(err))
+	}
+	if free < need {
+		return fmt.Errorf("%w: %d bytes are needed and %d are free", ErrNoSpace, need, free)
+	}
+	return nil
+}
+
 // Sealed describes a sealed file in an agent's spool.
 type Sealed struct {
 	Path   string
@@ -83,15 +97,21 @@ func MaxSealedSize(plaintext int64) uint64 {
 // file in spoolDir. It first checks that spoolDir has room for the sealed copy,
 // and fails with ErrNoSpace rather than filling the disk.
 func Seal(src, spoolDir string, recipient *age.HybridRecipient) (s Sealed, err error) {
+	in, err := os.Open(src) // #nosec G304 -- the source path comes from an approved flow.
+	if err != nil {
+		return Sealed{}, pathless(err)
+	}
+	defer func() { _ = in.Close() }()
+	return File(in, spoolDir, recipient)
+}
+
+// File is Seal for a file the caller has already opened, for example
+// without following a link.
+func File(in *os.File, spoolDir string, recipient *age.HybridRecipient) (s Sealed, err error) {
 	defer func() { err = pathless(err) }()
 	if recipient == nil {
 		return Sealed{}, errors.New("seal: no recipient")
 	}
-	in, err := os.Open(src) // #nosec G304 -- the source path comes from an approved flow.
-	if err != nil {
-		return Sealed{}, err
-	}
-	defer func() { _ = in.Close() }()
 	info, err := in.Stat()
 	if err != nil {
 		return Sealed{}, err

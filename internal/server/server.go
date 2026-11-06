@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
@@ -86,7 +87,13 @@ type Config struct {
 	// ConnectionLifetime is how long agent connection certificates last. Zero
 	// means connca.ConnectionLifetime. The lab sets it short to test renewal.
 	ConnectionLifetime time.Duration
-	Now                func() time.Time
+	// RelayAddress, RelayCertificateSHA256, and TicketKey let the orchestrator
+	// send agents to the relay for manual runs. With no address, manual runs
+	// are refused.
+	RelayAddress           string
+	RelayCertificateSHA256 []byte
+	TicketKey              ed25519.PrivateKey
+	Now                    func() time.Time
 }
 
 // Server holds the gRPC and REST handlers.
@@ -97,6 +104,9 @@ type Server struct {
 	cert   *tls.Certificate
 	token  []byte
 	grpc   *grpc.Server
+
+	streamsMu sync.Mutex
+	streams   map[string]*agentStream
 }
 
 // New validates a configuration and builds a server.
@@ -114,10 +124,13 @@ func New(cfg Config) (*Server, error) {
 	if cfg.ConnectionLifetime < connca.MinConnectionLifetime || cfg.ConnectionLifetime > connca.ConnectionLifetime {
 		return nil, connca.ErrInvalidLifetime
 	}
+	if cfg.RelayAddress != "" && (len(cfg.RelayCertificateSHA256) != sha256.Size || len(cfg.TicketKey) != ed25519.PrivateKeySize) {
+		return nil, errors.New("server: a relay address needs the relay's certificate SHA-256 and the ticket key")
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	s := &Server{cfg: cfg, limits: defaultLimits, token: token}
+	s := &Server{cfg: cfg, limits: defaultLimits, token: token, streams: map[string]*agentStream{}}
 	s.grpc = grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(s.tlsConfig())),
 		grpc.MaxRecvMsgSize(maxMessageBytes),
@@ -242,6 +255,8 @@ func (s *Server) API() http.Handler {
 	mux.Handle("GET /api/v1/agents", s.requireAdmin(http.HandlerFunc(s.listAgents)))
 	mux.Handle("PUT /api/v1/agents/{agent_id}/identity", s.requireAdmin(http.HandlerFunc(s.putIdentity)))
 	mux.Handle("GET /api/v1/agents/{agent_id}", s.requireAdmin(http.HandlerFunc(s.getAgent)))
+	mux.Handle("POST /api/v1/runs", s.requireAdmin(http.HandlerFunc(s.startRun)))
+	mux.Handle("GET /api/v1/runs/{run_id}", s.requireAdmin(http.HandlerFunc(s.getRun)))
 	// Anything else is a problem document too, never a plain-text page.
 	mux.Handle("/api/v1/", s.requireAdmin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		problem(w, http.StatusNotFound, "No such resource.")

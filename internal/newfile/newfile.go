@@ -37,5 +37,5 @@ func Write(path string, data []byte, mode os.FileMode) (err error) {
 	if err := os.Link(tmp.Name(), path); err != nil {
 		return err
 	}
-	return syncDir(filepath.Dir(path))
+	return SyncDir(filepath.Dir(path))
 }

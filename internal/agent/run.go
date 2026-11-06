@@ -39,7 +39,21 @@ type RunConfig struct {
 	// Log receives one JSON object per line for each connection event.
 	Log io.Writer
 	Now func() time.Time
+	// Outbox and Inbox are the only directories manual deliveries read from
+	// and write to, set on this host. With neither, the agent takes no
+	// deliveries. Spool holds sealed files in flight and is required with
+	// either. See ADR 0021.
+	Outbox, Inbox, Spool string
 }
+
+const (
+	// updateBuffer is how many delivery updates can wait for a stream.
+	updateBuffer = 64
+	// maxDeliveries is how many deliveries the agent runs at once. More are
+	// refused, so an orchestrator can't make it fill its spool or hold
+	// unbounded relay streams.
+	maxDeliveries = 8
+)
 
 const (
 	defaultHeartbeat  = 30 * time.Second
@@ -75,6 +89,17 @@ type runner struct {
 	host string
 	ca   *x509.Certificate
 	mu   sync.Mutex
+	// updates holds delivery updates until a stream can send them.
+	updates chan *agentv1.ConnectRequest
+	// held is an update a failed send couldn't deliver. The next stream sends
+	// it first. Only the session loop touches it.
+	held *agentv1.ConnectRequest
+
+	// active holds the IDs of deliveries in progress, under deliveriesMu, and
+	// deliveries waits for them before Run returns.
+	deliveriesMu sync.Mutex
+	active       map[string]bool
+	deliveries   sync.WaitGroup
 }
 
 // Run keeps the agent connected to the orchestrator until ctx ends. It
@@ -84,6 +109,9 @@ type runner struct {
 // can fix that, and ErrDamaged or ErrNotEnrolled if the agent can't start.
 func Run(ctx context.Context, dir string, cfg RunConfig) error {
 	cfg.defaults()
+	if err := cfg.checkDirs(); err != nil {
+		return err
+	}
 	s, err := ReadState(dir)
 	if err != nil {
 		return err
@@ -103,7 +131,15 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 	if err != nil {
 		return err
 	}
-	r := &runner{dir: dir, cfg: cfg, s: s, keys: keys, host: host, ca: ca}
+	r := newRunner(dir, cfg, s, keys)
+	r.host, r.ca = host, ca
+	// Deliveries run under their own context, which ends with Run, and Run
+	// waits for them, so none outlives it.
+	deliveryCtx, stopDeliveries := context.WithCancel(ctx)
+	defer func() {
+		stopDeliveries()
+		r.deliveries.Wait()
+	}()
 	backoff := newBackoff(cfg.MinBackoff, cfg.MaxBackoff)
 	for {
 		cert, err := r.certificate()
@@ -111,7 +147,7 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 			r.log("stopped", err)
 			return err
 		}
-		welcomed, sessionErr := r.session(ctx, cert)
+		welcomed, sessionErr := r.session(deliveryCtx, ctx, cert)
 		select {
 		case <-ctx.Done():
 			// Stopping is a normal end, whatever the stream reported.
@@ -154,6 +190,40 @@ func (b *backoff) wait(ctx context.Context) bool {
 	return true
 }
 
+func newRunner(dir string, cfg RunConfig, s State, keys *Keys) *runner {
+	return &runner{dir: dir, cfg: cfg, s: s, keys: keys,
+		updates: make(chan *agentv1.ConnectRequest, updateBuffer), active: map[string]bool{}}
+}
+
+// ErrDeliveryDirs is returned when the outbox, inbox, or spool is unusable.
+var ErrDeliveryDirs = errors.New("agent: the outbox and inbox need a spool, and each must be a separate, existing directory")
+
+// checkDirs requires a spool with an outbox or inbox, and each set directory to
+// exist and be a different directory from the others, so a delivery can't read
+// what another wrote or find sealed files where it reads.
+func (c *RunConfig) checkDirs() error {
+	if (c.Outbox != "" || c.Inbox != "") && c.Spool == "" {
+		return ErrDeliveryDirs
+	}
+	var seen []os.FileInfo
+	for _, dir := range []string{c.Outbox, c.Inbox, c.Spool} {
+		if dir == "" {
+			continue
+		}
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			return ErrDeliveryDirs
+		}
+		for _, other := range seen {
+			if os.SameFile(info, other) {
+				return ErrDeliveryDirs
+			}
+		}
+		seen = append(seen, info)
+	}
+	return nil
+}
+
 func (r *runner) log(event string, err error, fields ...any) {
 	m := map[string]any{"time": r.cfg.Now().UTC().Format(time.RFC3339), "event": event}
 	if err != nil {
@@ -175,7 +245,7 @@ func (r *runner) certificate() (*x509.Certificate, error) {
 
 // session runs one stream until it fails or ctx ends. It reports whether the
 // orchestrator welcomed the agent, so the caller can reset its backoff.
-func (r *runner) session(ctx context.Context, cert *x509.Certificate) (welcomed bool, err error) {
+func (r *runner) session(runCtx, ctx context.Context, cert *x509.Certificate) (welcomed bool, err error) {
 	tlsConfig := connca.PinnedClient(r.s.CAFingerprint, r.host, r.cfg.Now)
 	tlsConfig.Certificates = []tls.Certificate{{Certificate: [][]byte{cert.Raw}, PrivateKey: r.keys.Connection}}
 	conn, err := grpc.NewClient(r.s.Orchestrator, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -208,25 +278,51 @@ func (r *runner) session(ctx context.Context, cert *x509.Certificate) (welcomed 
 	}
 	r.log("connected", nil, "orchestrator_version", welcome.GetOrchestratorVersion())
 
-	// Nothing else comes from the orchestrator in M1, so the stream is read
-	// only to notice that it ended.
+	// The reader starts each assigned delivery on its own, under the run's
+	// context, so it carries on across reconnects.
 	ended := make(chan error, 1)
 	go func() {
 		for {
-			if _, err := stream.Recv(); err != nil {
+			resp, err := stream.Recv()
+			if err != nil {
 				ended <- err
 				return
+			}
+			if d := resp.GetManualDelivery(); d != nil {
+				r.startDelivery(runCtx, d)
 			}
 		}
 	}()
 	ticker := time.NewTicker(r.cfg.Heartbeat)
 	defer ticker.Stop()
+	// sendUpdate sends an update, and on failure holds it for the next stream,
+	// so none is lost or reordered.
+	sendUpdate := func(u *agentv1.ConnectRequest) error {
+		if err := stream.Send(u); err != nil {
+			r.held = u
+			if errors.Is(err, io.EOF) {
+				return <-ended
+			}
+			return err
+		}
+		return nil
+	}
+	if u := r.held; u != nil {
+		r.held = nil
+		if err := sendUpdate(u); err != nil {
+			return true, err
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return true, nil
 		case err := <-ended:
 			return true, err
+		case u := <-r.updates:
+			if err := sendUpdate(u); err != nil {
+				return true, err
+			}
 		case <-ticker.C:
 			if err := stream.Send(&agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Heartbeat{Heartbeat: &agentv1.Heartbeat{}}}); err != nil {
 				// A failed send reports only io.EOF. The reader goroutine

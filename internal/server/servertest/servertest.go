@@ -37,12 +37,21 @@ type Orchestrator struct {
 // Start runs an orchestrator until the test ends.
 func Start(t testing.TB) Orchestrator {
 	t.Helper()
+	return StartWith(t, func(*server.Config) {})
+}
+
+// StartWith runs an orchestrator with its configuration changed by edit, for
+// example to give it relay settings.
+func StartWith(t testing.TB, edit func(*server.Config)) Orchestrator {
+	t.Helper()
 	ca, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(AdminToken))
-	s, err := server.New(server.Config{Authority: ca, DB: dbtest.Pool(t), Names: []string{"localhost"}, AdminTokenSHA256: hex.EncodeToString(sum[:])})
+	cfg := server.Config{Authority: ca, DB: dbtest.Pool(t), Names: []string{"localhost"}, AdminTokenSHA256: hex.EncodeToString(sum[:])}
+	edit(&cfg)
+	s, err := server.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +105,32 @@ func (o Orchestrator) Token(t testing.TB, workspace, name string) string {
 		t.Fatalf("create token: %d %v", resp.StatusCode, err)
 	}
 	return out.Token
+}
+
+// Call calls an API path with the admin token, sending body as JSON if it isn't
+// nil, and returns the status and the decoded reply.
+func (o Orchestrator) Call(t testing.TB, method, path string, body any) (int, map[string]any) {
+	t.Helper()
+	var data []byte
+	if body != nil {
+		var err error
+		if data, err = json.Marshal(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req, err := http.NewRequestWithContext(context.Background(), method, "https://"+o.API+path, bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+AdminToken)
+	resp, err := o.client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
 }
 
 // PutIdentity stores an identity statement through the REST API and returns

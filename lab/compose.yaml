@@ -15,8 +15,11 @@ x-service: &service
 x-agent: &agent
   <<: *service
   tmpfs:
-    # A small spool, so that full-disk tests are quick.
+    # A small spool, so that full-disk tests are quick, and the outbox and
+    # inbox that manual deliveries use.
     - /var/lib/mmft/spool:size=16m,uid=10001,mode=0700
+    - /var/lib/mmft/outbox:size=16m,uid=10001,mode=0700
+    - /var/lib/mmft/inbox:size=16m,uid=10001,mode=0700
 
 services:
   orchestrator:
@@ -31,6 +34,9 @@ services:
       MMFT_ADMIN_TOKEN_SHA256: 979764906a9c6981445fc9d6c48070eb0e4400f274714e09dbfdc70176c34caf
     volumes:
       - orchestrator-ca:/var/lib/mmft/ca
+    tmpfs:
+      # The orchestrator's log, so scripts can check what it wrote.
+      - /var/log/mmft:size=16m,uid=10001,mode=0700
     depends_on:
       postgres:
         condition: service_healthy

@@ -86,6 +86,55 @@ func (DeliveryState) EnumDescriptor() ([]byte, []int) {
 	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{0}
 }
 
+type DeliveryRole int32
+
+const (
+	DeliveryRole_DELIVERY_ROLE_UNSPECIFIED DeliveryRole = 0
+	DeliveryRole_DELIVERY_ROLE_SEND        DeliveryRole = 1
+	DeliveryRole_DELIVERY_ROLE_RECEIVE     DeliveryRole = 2
+)
+
+// Enum value maps for DeliveryRole.
+var (
+	DeliveryRole_name = map[int32]string{
+		0: "DELIVERY_ROLE_UNSPECIFIED",
+		1: "DELIVERY_ROLE_SEND",
+		2: "DELIVERY_ROLE_RECEIVE",
+	}
+	DeliveryRole_value = map[string]int32{
+		"DELIVERY_ROLE_UNSPECIFIED": 0,
+		"DELIVERY_ROLE_SEND":        1,
+		"DELIVERY_ROLE_RECEIVE":     2,
+	}
+)
+
+func (x DeliveryRole) Enum() *DeliveryRole {
+	p := new(DeliveryRole)
+	*p = x
+	return p
+}
+
+func (x DeliveryRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeliveryRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_mmft_agent_v1_agent_proto_enumTypes[1].Descriptor()
+}
+
+func (DeliveryRole) Type() protoreflect.EnumType {
+	return &file_mmft_agent_v1_agent_proto_enumTypes[1]
+}
+
+func (x DeliveryRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeliveryRole.Descriptor instead.
+func (DeliveryRole) EnumDescriptor() ([]byte, []int) {
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{1}
+}
+
 type EnrollRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Token     string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
@@ -581,6 +630,7 @@ type ConnectResponse struct {
 	//	*ConnectResponse_Revocation
 	//	*ConnectResponse_Cancel
 	//	*ConnectResponse_RelayTicket
+	//	*ConnectResponse_ManualDelivery
 	Message       isConnectResponse_Message `protobuf_oneof:"message"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -695,6 +745,15 @@ func (x *ConnectResponse) GetRelayTicket() *RelayTicket {
 	return nil
 }
 
+func (x *ConnectResponse) GetManualDelivery() *ManualDelivery {
+	if x != nil {
+		if x, ok := x.Message.(*ConnectResponse_ManualDelivery); ok {
+			return x.ManualDelivery
+		}
+	}
+	return nil
+}
+
 type isConnectResponse_Message interface {
 	isConnectResponse_Message()
 }
@@ -731,6 +790,10 @@ type ConnectResponse_RelayTicket struct {
 	RelayTicket *RelayTicket `protobuf:"bytes,8,opt,name=relay_ticket,json=relayTicket,proto3,oneof"`
 }
 
+type ConnectResponse_ManualDelivery struct {
+	ManualDelivery *ManualDelivery `protobuf:"bytes,9,opt,name=manual_delivery,json=manualDelivery,proto3,oneof"`
+}
+
 func (*ConnectResponse_Welcome) isConnectResponse_Message() {}
 
 func (*ConnectResponse_WorkOffer) isConnectResponse_Message() {}
@@ -746,6 +809,8 @@ func (*ConnectResponse_Revocation) isConnectResponse_Message() {}
 func (*ConnectResponse_Cancel) isConnectResponse_Message() {}
 
 func (*ConnectResponse_RelayTicket) isConnectResponse_Message() {}
+
+func (*ConnectResponse_ManualDelivery) isConnectResponse_Message() {}
 
 // Hello states what the agent runs, so version gaps can be noticed.
 type Hello struct {
@@ -1265,6 +1330,106 @@ func (x *DeliveryUpdate) GetReceiptStatement() []byte {
 	return nil
 }
 
+// ManualDelivery gives an agent its side of one delivery in a manual run. The
+// agent reads only from its own outbox and writes only to its own inbox, which
+// are set on its host. See ADR 0021.
+type ManualDelivery struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	DeliveryId string                 `protobuf:"bytes,1,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
+	Role       DeliveryRole           `protobuf:"varint,2,opt,name=role,proto3,enum=mmft.agent.v1.DeliveryRole" json:"role,omitempty"`
+	// A bare file name, never a path. The source reads it from its outbox, and
+	// the destination creates it in its inbox.
+	FileName    string `protobuf:"bytes,3,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
+	PeerAgentId string `protobuf:"bytes,4,opt,name=peer_agent_id,json=peerAgentId,proto3" json:"peer_agent_id,omitempty"`
+	// The other agent's identity statement. The agent verifies it to its pinned
+	// root, so the orchestrator can't substitute another agent's keys.
+	PeerIdentityStatement []byte       `protobuf:"bytes,5,opt,name=peer_identity_statement,json=peerIdentityStatement,proto3" json:"peer_identity_statement,omitempty"`
+	RelayTicket           *RelayTicket `protobuf:"bytes,6,opt,name=relay_ticket,json=relayTicket,proto3" json:"relay_ticket,omitempty"`
+	// The source's signed delivery manifest. Sent to the destination only.
+	ManifestStatement []byte `protobuf:"bytes,7,opt,name=manifest_statement,json=manifestStatement,proto3" json:"manifest_statement,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ManualDelivery) Reset() {
+	*x = ManualDelivery{}
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManualDelivery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManualDelivery) ProtoMessage() {}
+
+func (x *ManualDelivery) ProtoReflect() protoreflect.Message {
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManualDelivery.ProtoReflect.Descriptor instead.
+func (*ManualDelivery) Descriptor() ([]byte, []int) {
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ManualDelivery) GetDeliveryId() string {
+	if x != nil {
+		return x.DeliveryId
+	}
+	return ""
+}
+
+func (x *ManualDelivery) GetRole() DeliveryRole {
+	if x != nil {
+		return x.Role
+	}
+	return DeliveryRole_DELIVERY_ROLE_UNSPECIFIED
+}
+
+func (x *ManualDelivery) GetFileName() string {
+	if x != nil {
+		return x.FileName
+	}
+	return ""
+}
+
+func (x *ManualDelivery) GetPeerAgentId() string {
+	if x != nil {
+		return x.PeerAgentId
+	}
+	return ""
+}
+
+func (x *ManualDelivery) GetPeerIdentityStatement() []byte {
+	if x != nil {
+		return x.PeerIdentityStatement
+	}
+	return nil
+}
+
+func (x *ManualDelivery) GetRelayTicket() *RelayTicket {
+	if x != nil {
+		return x.RelayTicket
+	}
+	return nil
+}
+
+func (x *ManualDelivery) GetManifestStatement() []byte {
+	if x != nil {
+		return x.ManifestStatement
+	}
+	return nil
+}
+
 // RelayTicket lets an agent connect to the relay for one delivery.
 type RelayTicket struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
@@ -1280,7 +1445,7 @@ type RelayTicket struct {
 
 func (x *RelayTicket) Reset() {
 	*x = RelayTicket{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1292,7 +1457,7 @@ func (x *RelayTicket) String() string {
 func (*RelayTicket) ProtoMessage() {}
 
 func (x *RelayTicket) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1305,7 +1470,7 @@ func (x *RelayTicket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayTicket.ProtoReflect.Descriptor instead.
 func (*RelayTicket) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RelayTicket) GetDeliveryId() string {
@@ -1349,7 +1514,7 @@ type AuditBatch struct {
 
 func (x *AuditBatch) Reset() {
 	*x = AuditBatch{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1361,7 +1526,7 @@ func (x *AuditBatch) String() string {
 func (*AuditBatch) ProtoMessage() {}
 
 func (x *AuditBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1374,7 +1539,7 @@ func (x *AuditBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditBatch.ProtoReflect.Descriptor instead.
 func (*AuditBatch) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AuditBatch) GetFirstPosition() uint64 {
@@ -1414,7 +1579,7 @@ type AgentIdentityRequest struct {
 
 func (x *AgentIdentityRequest) Reset() {
 	*x = AgentIdentityRequest{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1426,7 +1591,7 @@ func (x *AgentIdentityRequest) String() string {
 func (*AgentIdentityRequest) ProtoMessage() {}
 
 func (x *AgentIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1439,7 +1604,7 @@ func (x *AgentIdentityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentIdentityRequest.ProtoReflect.Descriptor instead.
 func (*AgentIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AgentIdentityRequest) GetAgentId() string {
@@ -1458,7 +1623,7 @@ type AgentIdentity struct {
 
 func (x *AgentIdentity) Reset() {
 	*x = AgentIdentity{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1470,7 +1635,7 @@ func (x *AgentIdentity) String() string {
 func (*AgentIdentity) ProtoMessage() {}
 
 func (x *AgentIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1483,7 +1648,7 @@ func (x *AgentIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentIdentity.ProtoReflect.Descriptor instead.
 func (*AgentIdentity) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentIdentity) GetIdentityStatement() []byte {
@@ -1502,7 +1667,7 @@ type FlowVersion struct {
 
 func (x *FlowVersion) Reset() {
 	*x = FlowVersion{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1514,7 +1679,7 @@ func (x *FlowVersion) String() string {
 func (*FlowVersion) ProtoMessage() {}
 
 func (x *FlowVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1527,7 +1692,7 @@ func (x *FlowVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowVersion.ProtoReflect.Descriptor instead.
 func (*FlowVersion) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *FlowVersion) GetVersionStatement() []byte {
@@ -1546,7 +1711,7 @@ type Revocation struct {
 
 func (x *Revocation) Reset() {
 	*x = Revocation{}
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1558,7 +1723,7 @@ func (x *Revocation) String() string {
 func (*Revocation) ProtoMessage() {}
 
 func (x *Revocation) ProtoReflect() protoreflect.Message {
-	mi := &file_mmft_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_mmft_agent_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1571,7 +1736,7 @@ func (x *Revocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Revocation.ProtoReflect.Descriptor instead.
 func (*Revocation) Descriptor() ([]byte, []int) {
-	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_mmft_agent_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Revocation) GetRevocationStatement() []byte {
@@ -1616,7 +1781,7 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\vaudit_batch\x18\x05 \x01(\v2\x19.mmft.agent.v1.AuditBatchH\x00R\n" +
 	"auditBatch\x12P\n" +
 	"\x10identity_request\x18\x06 \x01(\v2#.mmft.agent.v1.AgentIdentityRequestH\x00R\x0fidentityRequestB\t\n" +
-	"\amessage\"\x83\x04\n" +
+	"\amessage\"\xcd\x04\n" +
 	"\x0fConnectResponse\x122\n" +
 	"\awelcome\x18\x01 \x01(\v2\x16.mmft.agent.v1.WelcomeH\x00R\awelcome\x129\n" +
 	"\n" +
@@ -1628,7 +1793,8 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"revocation\x18\x06 \x01(\v2\x19.mmft.agent.v1.RevocationH\x00R\n" +
 	"revocation\x12/\n" +
 	"\x06cancel\x18\a \x01(\v2\x15.mmft.agent.v1.CancelH\x00R\x06cancel\x12?\n" +
-	"\frelay_ticket\x18\b \x01(\v2\x1a.mmft.agent.v1.RelayTicketH\x00R\vrelayTicketB\t\n" +
+	"\frelay_ticket\x18\b \x01(\v2\x1a.mmft.agent.v1.RelayTicketH\x00R\vrelayTicket\x12H\n" +
+	"\x0fmanual_delivery\x18\t \x01(\v2\x1d.mmft.agent.v1.ManualDeliveryH\x00R\x0emanualDeliveryB\t\n" +
 	"\amessage\"\xeb\x02\n" +
 	"\x05Hello\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12#\n" +
@@ -1672,7 +1838,16 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"bytes_done\x18\x05 \x01(\x04R\tbytesDone\x12-\n" +
 	"\x12manifest_statement\x18\x06 \x01(\fR\x11manifestStatement\x12+\n" +
-	"\x11receipt_statement\x18\a \x01(\fR\x10receiptStatement\"\xa5\x01\n" +
+	"\x11receipt_statement\x18\a \x01(\fR\x10receiptStatement\"\xc9\x02\n" +
+	"\x0eManualDelivery\x12\x1f\n" +
+	"\vdelivery_id\x18\x01 \x01(\tR\n" +
+	"deliveryId\x12/\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x1b.mmft.agent.v1.DeliveryRoleR\x04role\x12\x1b\n" +
+	"\tfile_name\x18\x03 \x01(\tR\bfileName\x12\"\n" +
+	"\rpeer_agent_id\x18\x04 \x01(\tR\vpeerAgentId\x126\n" +
+	"\x17peer_identity_statement\x18\x05 \x01(\fR\x15peerIdentityStatement\x12=\n" +
+	"\frelay_ticket\x18\x06 \x01(\v2\x1a.mmft.agent.v1.RelayTicketR\vrelayTicket\x12-\n" +
+	"\x12manifest_statement\x18\a \x01(\fR\x11manifestStatement\"\xa5\x01\n" +
 	"\vRelayTicket\x12\x1f\n" +
 	"\vdelivery_id\x18\x01 \x01(\tR\n" +
 	"deliveryId\x12\x16\n" +
@@ -1702,7 +1877,11 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\x18DELIVERY_STATE_VERIFYING\x10\x03\x12\x1c\n" +
 	"\x18DELIVERY_STATE_SUCCEEDED\x10\x04\x12\x1d\n" +
 	"\x19DELIVERY_STATE_RETRY_WAIT\x10\x05\x12\x19\n" +
-	"\x15DELIVERY_STATE_FAILED\x10\x062Z\n" +
+	"\x15DELIVERY_STATE_FAILED\x10\x06*`\n" +
+	"\fDeliveryRole\x12\x1d\n" +
+	"\x19DELIVERY_ROLE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12DELIVERY_ROLE_SEND\x10\x01\x12\x19\n" +
+	"\x15DELIVERY_ROLE_RECEIVE\x10\x022Z\n" +
 	"\x11EnrollmentService\x12E\n" +
 	"\x06Enroll\x12\x1c.mmft.agent.v1.EnrollRequest\x1a\x1d.mmft.agent.v1.EnrollResponse2\x97\x02\n" +
 	"\fAgentService\x12L\n" +
@@ -1722,64 +1901,69 @@ func file_mmft_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_mmft_agent_v1_agent_proto_rawDescData
 }
 
-var file_mmft_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_mmft_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_mmft_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_mmft_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_mmft_agent_v1_agent_proto_goTypes = []any{
 	(DeliveryState)(0),               // 0: mmft.agent.v1.DeliveryState
-	(*EnrollRequest)(nil),            // 1: mmft.agent.v1.EnrollRequest
-	(*EnrollResponse)(nil),           // 2: mmft.agent.v1.EnrollResponse
-	(*GetIdentityRequest)(nil),       // 3: mmft.agent.v1.GetIdentityRequest
-	(*GetIdentityResponse)(nil),      // 4: mmft.agent.v1.GetIdentityResponse
-	(*RenewCertificateRequest)(nil),  // 5: mmft.agent.v1.RenewCertificateRequest
-	(*RenewCertificateResponse)(nil), // 6: mmft.agent.v1.RenewCertificateResponse
-	(*ConnectRequest)(nil),           // 7: mmft.agent.v1.ConnectRequest
-	(*ConnectResponse)(nil),          // 8: mmft.agent.v1.ConnectResponse
-	(*Hello)(nil),                    // 9: mmft.agent.v1.Hello
-	(*Welcome)(nil),                  // 10: mmft.agent.v1.Welcome
-	(*Heartbeat)(nil),                // 11: mmft.agent.v1.Heartbeat
-	(*WorkOffer)(nil),                // 12: mmft.agent.v1.WorkOffer
-	(*LeaseClaim)(nil),               // 13: mmft.agent.v1.LeaseClaim
-	(*LeaseResult)(nil),              // 14: mmft.agent.v1.LeaseResult
-	(*Cancel)(nil),                   // 15: mmft.agent.v1.Cancel
-	(*DeliveryUpdate)(nil),           // 16: mmft.agent.v1.DeliveryUpdate
-	(*RelayTicket)(nil),              // 17: mmft.agent.v1.RelayTicket
-	(*AuditBatch)(nil),               // 18: mmft.agent.v1.AuditBatch
-	(*AgentIdentityRequest)(nil),     // 19: mmft.agent.v1.AgentIdentityRequest
-	(*AgentIdentity)(nil),            // 20: mmft.agent.v1.AgentIdentity
-	(*FlowVersion)(nil),              // 21: mmft.agent.v1.FlowVersion
-	(*Revocation)(nil),               // 22: mmft.agent.v1.Revocation
-	nil,                              // 23: mmft.agent.v1.Hello.FlowVersionsEntry
+	(DeliveryRole)(0),                // 1: mmft.agent.v1.DeliveryRole
+	(*EnrollRequest)(nil),            // 2: mmft.agent.v1.EnrollRequest
+	(*EnrollResponse)(nil),           // 3: mmft.agent.v1.EnrollResponse
+	(*GetIdentityRequest)(nil),       // 4: mmft.agent.v1.GetIdentityRequest
+	(*GetIdentityResponse)(nil),      // 5: mmft.agent.v1.GetIdentityResponse
+	(*RenewCertificateRequest)(nil),  // 6: mmft.agent.v1.RenewCertificateRequest
+	(*RenewCertificateResponse)(nil), // 7: mmft.agent.v1.RenewCertificateResponse
+	(*ConnectRequest)(nil),           // 8: mmft.agent.v1.ConnectRequest
+	(*ConnectResponse)(nil),          // 9: mmft.agent.v1.ConnectResponse
+	(*Hello)(nil),                    // 10: mmft.agent.v1.Hello
+	(*Welcome)(nil),                  // 11: mmft.agent.v1.Welcome
+	(*Heartbeat)(nil),                // 12: mmft.agent.v1.Heartbeat
+	(*WorkOffer)(nil),                // 13: mmft.agent.v1.WorkOffer
+	(*LeaseClaim)(nil),               // 14: mmft.agent.v1.LeaseClaim
+	(*LeaseResult)(nil),              // 15: mmft.agent.v1.LeaseResult
+	(*Cancel)(nil),                   // 16: mmft.agent.v1.Cancel
+	(*DeliveryUpdate)(nil),           // 17: mmft.agent.v1.DeliveryUpdate
+	(*ManualDelivery)(nil),           // 18: mmft.agent.v1.ManualDelivery
+	(*RelayTicket)(nil),              // 19: mmft.agent.v1.RelayTicket
+	(*AuditBatch)(nil),               // 20: mmft.agent.v1.AuditBatch
+	(*AgentIdentityRequest)(nil),     // 21: mmft.agent.v1.AgentIdentityRequest
+	(*AgentIdentity)(nil),            // 22: mmft.agent.v1.AgentIdentity
+	(*FlowVersion)(nil),              // 23: mmft.agent.v1.FlowVersion
+	(*Revocation)(nil),               // 24: mmft.agent.v1.Revocation
+	nil,                              // 25: mmft.agent.v1.Hello.FlowVersionsEntry
 }
 var file_mmft_agent_v1_agent_proto_depIdxs = []int32{
-	9,  // 0: mmft.agent.v1.ConnectRequest.hello:type_name -> mmft.agent.v1.Hello
-	11, // 1: mmft.agent.v1.ConnectRequest.heartbeat:type_name -> mmft.agent.v1.Heartbeat
-	13, // 2: mmft.agent.v1.ConnectRequest.lease_claim:type_name -> mmft.agent.v1.LeaseClaim
-	16, // 3: mmft.agent.v1.ConnectRequest.delivery_update:type_name -> mmft.agent.v1.DeliveryUpdate
-	18, // 4: mmft.agent.v1.ConnectRequest.audit_batch:type_name -> mmft.agent.v1.AuditBatch
-	19, // 5: mmft.agent.v1.ConnectRequest.identity_request:type_name -> mmft.agent.v1.AgentIdentityRequest
-	10, // 6: mmft.agent.v1.ConnectResponse.welcome:type_name -> mmft.agent.v1.Welcome
-	12, // 7: mmft.agent.v1.ConnectResponse.work_offer:type_name -> mmft.agent.v1.WorkOffer
-	14, // 8: mmft.agent.v1.ConnectResponse.lease_result:type_name -> mmft.agent.v1.LeaseResult
-	21, // 9: mmft.agent.v1.ConnectResponse.flow_version:type_name -> mmft.agent.v1.FlowVersion
-	20, // 10: mmft.agent.v1.ConnectResponse.agent_identity:type_name -> mmft.agent.v1.AgentIdentity
-	22, // 11: mmft.agent.v1.ConnectResponse.revocation:type_name -> mmft.agent.v1.Revocation
-	15, // 12: mmft.agent.v1.ConnectResponse.cancel:type_name -> mmft.agent.v1.Cancel
-	17, // 13: mmft.agent.v1.ConnectResponse.relay_ticket:type_name -> mmft.agent.v1.RelayTicket
-	23, // 14: mmft.agent.v1.Hello.flow_versions:type_name -> mmft.agent.v1.Hello.FlowVersionsEntry
-	0,  // 15: mmft.agent.v1.DeliveryUpdate.state:type_name -> mmft.agent.v1.DeliveryState
-	1,  // 16: mmft.agent.v1.EnrollmentService.Enroll:input_type -> mmft.agent.v1.EnrollRequest
-	7,  // 17: mmft.agent.v1.AgentService.Connect:input_type -> mmft.agent.v1.ConnectRequest
-	5,  // 18: mmft.agent.v1.AgentService.RenewCertificate:input_type -> mmft.agent.v1.RenewCertificateRequest
-	3,  // 19: mmft.agent.v1.AgentService.GetIdentity:input_type -> mmft.agent.v1.GetIdentityRequest
-	2,  // 20: mmft.agent.v1.EnrollmentService.Enroll:output_type -> mmft.agent.v1.EnrollResponse
-	8,  // 21: mmft.agent.v1.AgentService.Connect:output_type -> mmft.agent.v1.ConnectResponse
-	6,  // 22: mmft.agent.v1.AgentService.RenewCertificate:output_type -> mmft.agent.v1.RenewCertificateResponse
-	4,  // 23: mmft.agent.v1.AgentService.GetIdentity:output_type -> mmft.agent.v1.GetIdentityResponse
-	20, // [20:24] is the sub-list for method output_type
-	16, // [16:20] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	10, // 0: mmft.agent.v1.ConnectRequest.hello:type_name -> mmft.agent.v1.Hello
+	12, // 1: mmft.agent.v1.ConnectRequest.heartbeat:type_name -> mmft.agent.v1.Heartbeat
+	14, // 2: mmft.agent.v1.ConnectRequest.lease_claim:type_name -> mmft.agent.v1.LeaseClaim
+	17, // 3: mmft.agent.v1.ConnectRequest.delivery_update:type_name -> mmft.agent.v1.DeliveryUpdate
+	20, // 4: mmft.agent.v1.ConnectRequest.audit_batch:type_name -> mmft.agent.v1.AuditBatch
+	21, // 5: mmft.agent.v1.ConnectRequest.identity_request:type_name -> mmft.agent.v1.AgentIdentityRequest
+	11, // 6: mmft.agent.v1.ConnectResponse.welcome:type_name -> mmft.agent.v1.Welcome
+	13, // 7: mmft.agent.v1.ConnectResponse.work_offer:type_name -> mmft.agent.v1.WorkOffer
+	15, // 8: mmft.agent.v1.ConnectResponse.lease_result:type_name -> mmft.agent.v1.LeaseResult
+	23, // 9: mmft.agent.v1.ConnectResponse.flow_version:type_name -> mmft.agent.v1.FlowVersion
+	22, // 10: mmft.agent.v1.ConnectResponse.agent_identity:type_name -> mmft.agent.v1.AgentIdentity
+	24, // 11: mmft.agent.v1.ConnectResponse.revocation:type_name -> mmft.agent.v1.Revocation
+	16, // 12: mmft.agent.v1.ConnectResponse.cancel:type_name -> mmft.agent.v1.Cancel
+	19, // 13: mmft.agent.v1.ConnectResponse.relay_ticket:type_name -> mmft.agent.v1.RelayTicket
+	18, // 14: mmft.agent.v1.ConnectResponse.manual_delivery:type_name -> mmft.agent.v1.ManualDelivery
+	25, // 15: mmft.agent.v1.Hello.flow_versions:type_name -> mmft.agent.v1.Hello.FlowVersionsEntry
+	0,  // 16: mmft.agent.v1.DeliveryUpdate.state:type_name -> mmft.agent.v1.DeliveryState
+	1,  // 17: mmft.agent.v1.ManualDelivery.role:type_name -> mmft.agent.v1.DeliveryRole
+	19, // 18: mmft.agent.v1.ManualDelivery.relay_ticket:type_name -> mmft.agent.v1.RelayTicket
+	2,  // 19: mmft.agent.v1.EnrollmentService.Enroll:input_type -> mmft.agent.v1.EnrollRequest
+	8,  // 20: mmft.agent.v1.AgentService.Connect:input_type -> mmft.agent.v1.ConnectRequest
+	6,  // 21: mmft.agent.v1.AgentService.RenewCertificate:input_type -> mmft.agent.v1.RenewCertificateRequest
+	4,  // 22: mmft.agent.v1.AgentService.GetIdentity:input_type -> mmft.agent.v1.GetIdentityRequest
+	3,  // 23: mmft.agent.v1.EnrollmentService.Enroll:output_type -> mmft.agent.v1.EnrollResponse
+	9,  // 24: mmft.agent.v1.AgentService.Connect:output_type -> mmft.agent.v1.ConnectResponse
+	7,  // 25: mmft.agent.v1.AgentService.RenewCertificate:output_type -> mmft.agent.v1.RenewCertificateResponse
+	5,  // 26: mmft.agent.v1.AgentService.GetIdentity:output_type -> mmft.agent.v1.GetIdentityResponse
+	23, // [23:27] is the sub-list for method output_type
+	19, // [19:23] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_mmft_agent_v1_agent_proto_init() }
@@ -1804,14 +1988,15 @@ func file_mmft_agent_v1_agent_proto_init() {
 		(*ConnectResponse_Revocation)(nil),
 		(*ConnectResponse_Cancel)(nil),
 		(*ConnectResponse_RelayTicket)(nil),
+		(*ConnectResponse_ManualDelivery)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mmft_agent_v1_agent_proto_rawDesc), len(file_mmft_agent_v1_agent_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   23,
+			NumEnums:      2,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

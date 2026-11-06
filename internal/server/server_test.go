@@ -57,9 +57,16 @@ type harness struct {
 	grpcAddr string
 	apiAddr  string
 	pool     *x509.CertPool
+	srv      *Server
 }
 
 func start(t *testing.T) harness {
+	t.Helper()
+	return startWith(t, func(*Config) {})
+}
+
+// startWith starts a server with its configuration changed by edit.
+func startWith(t *testing.T, edit func(*Config)) harness {
 	t.Helper()
 	ca, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
 	if err != nil {
@@ -68,7 +75,9 @@ func start(t *testing.T) harness {
 	sum := sha256.Sum256([]byte(adminToken))
 	pool := dbtest.Pool(t)
 	c := &clock{t: time.Now()}
-	s, err := New(Config{Authority: ca, DB: pool, Names: []string{"orchestrator.test"}, AdminTokenSHA256: hex.EncodeToString(sum[:]), Now: c.now})
+	cfg := Config{Authority: ca, DB: pool, Names: []string{"orchestrator.test"}, AdminTokenSHA256: hex.EncodeToString(sum[:]), Now: c.now}
+	edit(&cfg)
+	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +98,7 @@ func start(t *testing.T) harness {
 			t.Errorf("serve: %v", err)
 		}
 	})
-	return harness{clock: c, ca: ca, db: pool, grpcAddr: g.Addr().String(), apiAddr: a.Addr().String(), pool: ca.Pool()}
+	return harness{clock: c, ca: ca, db: pool, grpcAddr: g.Addr().String(), apiAddr: a.Addr().String(), pool: ca.Pool(), srv: s}
 }
 
 func clientCert(t *testing.T, ca *connca.Authority, id string) tls.Certificate {

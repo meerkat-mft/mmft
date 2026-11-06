@@ -114,6 +114,18 @@ _Avoid_: Job, execution, instance
 One file going to one destination within a run, with its own retries and result.
 _Avoid_: Transfer, transmission
 
+**Manual run**:
+A run with no flow, started by an administrator to move one file between two agents. Only M1 uses it.
+_Avoid_: Ad hoc run, one-off job
+
+**Outbox**:
+The one directory, set on an agent's host, that manual deliveries may read from.
+_Avoid_: Source folder, drop folder
+
+**Inbox**:
+The one directory, set on an agent's host, that manual deliveries may write to.
+_Avoid_: Target folder, landing zone
+
 **Signed statement**:
 A DSSE envelope holding one signed Meerkat object, such as a flow version or delivery manifest.
 _Avoid_: Signed blob, attestation

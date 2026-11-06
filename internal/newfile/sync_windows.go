@@ -1,4 +1,4 @@
 package newfile
 
-// syncDir does nothing on Windows, where directories can't be synced.
-func syncDir(string) error { return nil }
+// SyncDir does nothing on Windows, where directories can't be synced.
+func SyncDir(string) error { return nil }

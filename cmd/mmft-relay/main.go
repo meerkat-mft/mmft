@@ -9,22 +9,18 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
 	"mmft.dev/mmft/internal/relay"
-	"mmft.dev/mmft/internal/relayticket"
 	"mmft.dev/mmft/internal/version"
 )
 
@@ -77,49 +73,15 @@ func initIdentity(stdout io.Writer) error {
 	return json.NewEncoder(stdout).Encode(map[string]string{"relay_certificate_sha256": hex.EncodeToString(fp)})
 }
 
-func connectionCA(path string) (*x509.Certificate, error) {
-	if path == "" {
-		return nil, errors.New("MMFT_CONNECTION_CA is not set")
-	}
-	data, err := os.ReadFile(filepath.Clean(path)) //nolint:gosec // the operator sets this path
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(data)
-	if block == nil || block.Type != "CERTIFICATE" {
-		return nil, errors.New("MMFT_CONNECTION_CA does not hold a PEM certificate")
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil || !cert.IsCA {
-		return nil, errors.New("MMFT_CONNECTION_CA does not hold a CA certificate")
-	}
-	return cert, nil
-}
-
 func serve(ctx context.Context, stdout io.Writer) error {
-	dir, err := relayDir()
+	cfg, addr, err := relay.FromEnv(os.Getenv)
 	if err != nil {
 		return err
 	}
-	identity, err := relay.LoadIdentity(dir)
+	cfg.Log = stdout
+	s, err := relay.New(cfg)
 	if err != nil {
 		return err
-	}
-	ca, err := connectionCA(os.Getenv("MMFT_CONNECTION_CA"))
-	if err != nil {
-		return err
-	}
-	key, err := relayticket.ParsePublicKey(os.Getenv("MMFT_RELAY_TICKET_KEY"))
-	if err != nil {
-		return errors.New("MMFT_RELAY_TICKET_KEY must be the 64 hex character key from `mmft-orchestrator ca relay-settings`")
-	}
-	s, err := relay.New(relay.Config{Identity: identity, ConnectionCA: ca, TicketKey: key, Log: stdout})
-	if err != nil {
-		return err
-	}
-	addr := os.Getenv("MMFT_RELAY_LISTEN")
-	if addr == "" {
-		addr = ":7445"
 	}
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", addr)
@@ -130,7 +92,7 @@ func serve(ctx context.Context, stdout io.Writer) error {
 		"time":                     time.Now().UTC().Format(time.RFC3339),
 		"event":                    "started",
 		"address":                  lis.Addr().String(),
-		"relay_certificate_sha256": hex.EncodeToString(relay.Fingerprint(identity)),
+		"relay_certificate_sha256": hex.EncodeToString(relay.Fingerprint(cfg.Identity)),
 	})
 	return s.Serve(ctx, lis)
 }

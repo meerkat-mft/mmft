@@ -59,12 +59,16 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 	silence := a.s.limits.streamSilence
 	timer := time.NewTimer(silence)
 	defer timer.Stop()
+	// sendErr reports a failed write once the writer goroutine runs.
+	var sendErr chan error
 	next := func() (*agentv1.ConnectRequest, error) {
 		select {
 		case m := <-msgs:
 			timer.Reset(silence)
 			return m, nil
 		case err := <-recvErr:
+			return nil, err
+		case err := <-sendErr:
 			return nil, err
 		case <-timer.C:
 			return nil, status.Error(codes.DeadlineExceeded, "the agent sent nothing for too long")
@@ -96,6 +100,25 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 	}}}); err != nil {
 		return err
 	}
+	// From here on only the writer sends on the stream, so other code can
+	// queue messages for this agent.
+	out, unregister := a.s.register(id)
+	defer unregister()
+	sendErr = make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case m := <-out.out:
+				if err := stream.Send(m); err != nil {
+					a.s.dispatchLost(m)
+					sendErr <- err
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	for {
 		m, err := next()
 		if err != nil {
@@ -106,6 +129,11 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 			if err := a.seen(ctx, id, ""); err != nil {
 				return err
 			}
+		case *agentv1.ConnectRequest_DeliveryUpdate:
+			if err := a.seen(ctx, id, ""); err != nil {
+				return err
+			}
+			a.s.deliveryUpdate(ctx, id, m.GetDeliveryUpdate())
 		case *agentv1.ConnectRequest_Hello:
 			return status.Error(codes.InvalidArgument, "the stream already has a hello")
 		default:
