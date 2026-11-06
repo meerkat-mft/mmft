@@ -1,0 +1,45 @@
+/* Generated from design/DESIGN.md by tokens.sh. Do not edit. */
+:root {
+  --color-primary: #e2a04a;
+  --color-primary-hover: #e5ab60;
+  --color-on-primary: #1a1208;
+  --color-surface-sidebar: #0b111a;
+  --color-surface-page: #0f1724;
+  --color-surface-content: #141e2d;
+  --color-surface-detail: #192637;
+  --color-surface-raised: #1f2e42;
+  --color-surface-floating: #26374e;
+  --color-on-surface: #e6ecf4;
+  --color-on-surface-muted: #97a8c0;
+  --color-success: #4cc38a;
+  --color-success-container: #1d383c;
+  --color-error: #ff7378;
+  --color-error-container: #3a2c39;
+  --color-warning: #b0a0ff;
+  --color-warning-container: #2d334f;
+  --color-info: #5eaef5;
+  --color-info-container: #20354d;
+  --color-cancelled: #9aabc2;
+  --color-cancelled-container: #293545;
+  --color-scrim: #05080d;
+  --spacing-xxs: 2px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-xxl: 32px;
+  --spacing-row: 32px;
+  --spacing-control: 32px;
+  --spacing-topbar: 48px;
+  --spacing-sidebar: 232px;
+  --spacing-sidebar-collapsed: 56px;
+  --spacing-list-pane: 360px;
+  --spacing-resource-menu: 200px;
+  --spacing-panel: 440px;
+  --spacing-panel-dock-min-viewport: 1600px;
+  --rounded-none: 0px;
+  --rounded-sm: 4px;
+  --rounded-full: 9999px;
+}
+
