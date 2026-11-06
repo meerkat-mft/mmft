@@ -41,12 +41,12 @@ Without the label, go straight to step 3. If the work turns out larger or riskie
 
 - Title: Conventional Commits, such as `feat(agent): add file watcher`, with a scope from `docs/naming.md`. The squash merge uses it as the commit on `main`, and CI checks it.
 - Body: fill in `.github/pull_request_template.md`, starting with `Closes #n`.
-- Copilot reviews the pull request automatically. If no review appears within a few minutes, request one.
+- The `Claude review` workflow reviews the pull request automatically and posts inline comments. If no review appears within a few minutes, check the workflow run.
 - Watch the pull request for CI results and review comments.
 
 ## 5. Handle review and CI
 
-- Fix each valid Copilot or maintainer comment, then resolve its thread. The ruleset requires every conversation to be resolved before merging.
+- Fix each valid review or maintainer comment, then resolve its thread. The ruleset requires every conversation to be resolved before merging.
 - For a comment that doesn't apply, reply with the reason and leave the thread open. Only the maintainer resolves a comment that wasn't fixed.
 - When CI fails, reproduce the failure locally, fix it, and show the check passing. Never skip or disable a test to get green.
 
