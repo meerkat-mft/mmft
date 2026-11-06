@@ -16,7 +16,7 @@ func ownedByUser(info os.FileInfo) bool {
 // checkPrivateFile requires a file with no group or other access, owned by this
 // user.
 func checkPrivateFile(info os.FileInfo) error {
-	if info.Mode().Perm()&0o077 != 0 || !ownedByUser(info) {
+	if info.Mode().Perm()&0o007 != 0 || !ownedByUser(info) {
 		return ErrNotPrivate
 	}
 	return nil
