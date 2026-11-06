@@ -5,7 +5,7 @@
 // source: mmft/relay/v1/relay.proto
 
 // Package mmft.relay.v1 moves sealed files between agents. Draft for M1. The
-// relay sees only sealed bytes and stores nothing.
+// relay sees only sealed bytes and stores nothing. See ADR 0020.
 
 package relayv1
 
@@ -31,12 +31,15 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // RelayService pairs a sending agent with a receiving agent for one delivery.
-// Both sides connect outbound, and neither accepts a connection.
+// Both sides connect outbound, and neither accepts a connection. Each side
+// authenticates with its connection certificate and a relay ticket for its
+// role.
 type RelayServiceClient interface {
 	// Send streams a sealed file. The first message must be a SendOpen.
 	Send(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SendRequest, SendResponse], error)
-	// Receive streams a sealed file. The first message states where to resume.
-	Receive(ctx context.Context, in *ReceiveRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReceiveResponse], error)
+	// Receive streams a sealed file. The first message must be a ReceiveOpen,
+	// which states where to resume.
+	Receive(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ReceiveRequest, ReceiveResponse], error)
 }
 
 type relayServiceClient struct {
@@ -60,36 +63,33 @@ func (c *relayServiceClient) Send(ctx context.Context, opts ...grpc.CallOption) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RelayService_SendClient = grpc.BidiStreamingClient[SendRequest, SendResponse]
 
-func (c *relayServiceClient) Receive(ctx context.Context, in *ReceiveRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReceiveResponse], error) {
+func (c *relayServiceClient) Receive(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ReceiveRequest, ReceiveResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &RelayService_ServiceDesc.Streams[1], RelayService_Receive_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	x := &grpc.GenericClientStream[ReceiveRequest, ReceiveResponse]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RelayService_ReceiveClient = grpc.ServerStreamingClient[ReceiveResponse]
+type RelayService_ReceiveClient = grpc.BidiStreamingClient[ReceiveRequest, ReceiveResponse]
 
 // RelayServiceServer is the server API for RelayService service.
 // All implementations must embed UnimplementedRelayServiceServer
 // for forward compatibility.
 //
 // RelayService pairs a sending agent with a receiving agent for one delivery.
-// Both sides connect outbound, and neither accepts a connection.
+// Both sides connect outbound, and neither accepts a connection. Each side
+// authenticates with its connection certificate and a relay ticket for its
+// role.
 type RelayServiceServer interface {
 	// Send streams a sealed file. The first message must be a SendOpen.
 	Send(grpc.BidiStreamingServer[SendRequest, SendResponse]) error
-	// Receive streams a sealed file. The first message states where to resume.
-	Receive(*ReceiveRequest, grpc.ServerStreamingServer[ReceiveResponse]) error
+	// Receive streams a sealed file. The first message must be a ReceiveOpen,
+	// which states where to resume.
+	Receive(grpc.BidiStreamingServer[ReceiveRequest, ReceiveResponse]) error
 	mustEmbedUnimplementedRelayServiceServer()
 }
 
@@ -103,7 +103,7 @@ type UnimplementedRelayServiceServer struct{}
 func (UnimplementedRelayServiceServer) Send(grpc.BidiStreamingServer[SendRequest, SendResponse]) error {
 	return status.Error(codes.Unimplemented, "method Send not implemented")
 }
-func (UnimplementedRelayServiceServer) Receive(*ReceiveRequest, grpc.ServerStreamingServer[ReceiveResponse]) error {
+func (UnimplementedRelayServiceServer) Receive(grpc.BidiStreamingServer[ReceiveRequest, ReceiveResponse]) error {
 	return status.Error(codes.Unimplemented, "method Receive not implemented")
 }
 func (UnimplementedRelayServiceServer) mustEmbedUnimplementedRelayServiceServer() {}
@@ -135,15 +135,11 @@ func _RelayService_Send_Handler(srv interface{}, stream grpc.ServerStream) error
 type RelayService_SendServer = grpc.BidiStreamingServer[SendRequest, SendResponse]
 
 func _RelayService_Receive_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(ReceiveRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(RelayServiceServer).Receive(m, &grpc.GenericServerStream[ReceiveRequest, ReceiveResponse]{ServerStream: stream})
+	return srv.(RelayServiceServer).Receive(&grpc.GenericServerStream[ReceiveRequest, ReceiveResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RelayService_ReceiveServer = grpc.ServerStreamingServer[ReceiveResponse]
+type RelayService_ReceiveServer = grpc.BidiStreamingServer[ReceiveRequest, ReceiveResponse]
 
 // RelayService_ServiceDesc is the grpc.ServiceDesc for RelayService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -163,6 +159,7 @@ var RelayService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Receive",
 			Handler:       _RelayService_Receive_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "mmft/relay/v1/relay.proto",

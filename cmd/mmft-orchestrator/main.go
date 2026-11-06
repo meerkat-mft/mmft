@@ -19,6 +19,7 @@ import (
 
 	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/db"
+	"mmft.dev/mmft/internal/relayticket"
 	"mmft.dev/mmft/internal/server"
 	"mmft.dev/mmft/internal/version"
 )
@@ -44,6 +45,13 @@ func run(args []string, url string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	if len(args) == 2 && args[0] == "ca" && args[1] == "relay-settings" {
+		if err := relaySettings(stdout); err != nil {
+			_ = json.NewEncoder(stderr).Encode(map[string]string{"error": err.Error()})
+			return 1
+		}
+		return 0
+	}
 	if len(args) == 1 && args[0] == "serve" {
 		if err := serve(); err != nil {
 			_ = json.NewEncoder(stderr).Encode(map[string]string{"error": err.Error()})
@@ -55,7 +63,7 @@ func run(args []string, url string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stdout, version.String("mmft-orchestrator"))
 		return 0
 	}
-	_, _ = io.WriteString(stderr, "usage: mmft-orchestrator [version | migrate | ca init | serve]\n")
+	_, _ = io.WriteString(stderr, "usage: mmft-orchestrator [version | migrate | ca init | ca relay-settings | serve]\n")
 	return 2
 }
 
@@ -86,7 +94,36 @@ func caInit(stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(stdout).Encode(map[string]string{"ca_fingerprint": ca.Fingerprint()})
+	key, err := relayticket.LoadOrCreateKey(dir)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(stdout).Encode(map[string]string{
+		"ca_fingerprint":   ca.Fingerprint(),
+		"relay_ticket_key": relayticket.PublicKey(key),
+	})
+}
+
+// relaySettings prints what a relay needs to check agents and their tickets:
+// the connection CA certificate and the ticket public key. Neither is secret.
+// It creates the ticket key if the CA predates it.
+func relaySettings(stdout io.Writer) error {
+	dir := os.Getenv("MMFT_CA_DIR")
+	if dir == "" {
+		return errors.New("MMFT_CA_DIR is not set")
+	}
+	ca, err := connca.Load(dir)
+	if err != nil {
+		return err
+	}
+	key, err := relayticket.LoadOrCreateKey(dir)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(stdout).Encode(map[string]string{
+		"connection_ca":    string(ca.CertificatePEM()),
+		"relay_ticket_key": relayticket.PublicKey(key),
+	})
 }
 
 func listenAddress(name, fallback string) string {

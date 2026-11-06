@@ -164,6 +164,10 @@ _Avoid_: Agent certificate, agent ID
 A short-lived certificate that lets a component connect, and proves nothing about end-to-end trust.
 _Avoid_: Agent certificate, mTLS key
 
+**Relay ticket**:
+A short-lived token, signed by the orchestrator, that lets one agent take one side of one delivery at the relay.
+_Avoid_: Relay token, pass
+
 **Enrollment**:
 The process that admits a new agent to the Meerkat stack.
 _Avoid_: Registration, onboarding, pairing

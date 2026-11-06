@@ -1267,12 +1267,15 @@ func (x *DeliveryUpdate) GetReceiptStatement() []byte {
 
 // RelayTicket lets an agent connect to the relay for one delivery.
 type RelayTicket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeliveryId    string                 `protobuf:"bytes,1,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
-	Ticket        []byte                 `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	RelayAddress  string                 `protobuf:"bytes,3,opt,name=relay_address,json=relayAddress,proto3" json:"relay_address,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	DeliveryId   string                 `protobuf:"bytes,1,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
+	Ticket       []byte                 `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	RelayAddress string                 `protobuf:"bytes,3,opt,name=relay_address,json=relayAddress,proto3" json:"relay_address,omitempty"`
+	// SHA-256 of the relay's TLS certificate. The agent trusts the relay only if
+	// it presents this certificate. See ADR 0020.
+	RelayCertificateSha256 []byte `protobuf:"bytes,4,opt,name=relay_certificate_sha256,json=relayCertificateSha256,proto3" json:"relay_certificate_sha256,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *RelayTicket) Reset() {
@@ -1324,6 +1327,13 @@ func (x *RelayTicket) GetRelayAddress() string {
 		return x.RelayAddress
 	}
 	return ""
+}
+
+func (x *RelayTicket) GetRelayCertificateSha256() []byte {
+	if x != nil {
+		return x.RelayCertificateSha256
+	}
+	return nil
 }
 
 // AuditBatch carries events and the signed statement that covers them.
@@ -1662,12 +1672,13 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"bytes_done\x18\x05 \x01(\x04R\tbytesDone\x12-\n" +
 	"\x12manifest_statement\x18\x06 \x01(\fR\x11manifestStatement\x12+\n" +
-	"\x11receipt_statement\x18\a \x01(\fR\x10receiptStatement\"k\n" +
+	"\x11receipt_statement\x18\a \x01(\fR\x10receiptStatement\"\xa5\x01\n" +
 	"\vRelayTicket\x12\x1f\n" +
 	"\vdelivery_id\x18\x01 \x01(\tR\n" +
 	"deliveryId\x12\x16\n" +
 	"\x06ticket\x18\x02 \x01(\fR\x06ticket\x12#\n" +
-	"\rrelay_address\x18\x03 \x01(\tR\frelayAddress\"\x95\x01\n" +
+	"\rrelay_address\x18\x03 \x01(\tR\frelayAddress\x128\n" +
+	"\x18relay_certificate_sha256\x18\x04 \x01(\fR\x16relayCertificateSha256\"\x95\x01\n" +
 	"\n" +
 	"AuditBatch\x12%\n" +
 	"\x0efirst_position\x18\x01 \x01(\x04R\rfirstPosition\x12\x1f\n" +
