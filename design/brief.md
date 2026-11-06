@@ -1,6 +1,6 @@
 # Console design brief
 
-The one-page brief for the console's design language (#5). The prototypes in [prototype/](prototype/) explore it.
+The one-page brief for the console's design language (#5). [DESIGN.md](DESIGN.md) is the design language that answers it.
 
 ## Who uses it
 
@@ -16,13 +16,13 @@ Administrators who run file movement for an organization: platform engineers, in
 ## Constraints
 
 - **Dark only.** There is no light theme, in mock-ups or in the product.
-- **The brand's amber (`#E2A04A`) must never be mistaken for a warning.** Each direction proposes an answer.
+- **The brand's amber (`#E2A04A`) must never be mistaken for a warning.**
 - **Status never relies on colour alone.** Every state also has a label, a shape, or an icon.
 - **Untrusted text stays text.** File names, agent names, and error codes come from agents and administrators, so they are shown as plain text, never as markup. File names can be missing once retention has deleted them, and no screen may need them to make sense.
 - **Every screen is built on the public API.** Each prototype screen lists the calls it would need, marked as built, specified, or missing.
 - **No real companies or products** in example data.
-- **Same-origin only:** the real console's content security policy allows no third-party fonts or scripts, so the chosen fonts will be self-hosted. The prototypes load them from a font service only for speed.
+- **Same-origin only:** the real console's content security policy allows no third-party fonts or scripts, so fonts are self-hosted.
 
-## What we're choosing between
+## Where the decisions are
 
-Three directions, each applied to the same three screens: the flow canvas, a run with partial failure, and one delivery's audit trail. Pick one, or parts of several. Then we extract its tokens into the design language.
+The design review for #5 settled the design language. [DESIGN.md](DESIGN.md) holds it: exact token values, the reasons for them, and the rules for components, motion, icons, and accessibility.

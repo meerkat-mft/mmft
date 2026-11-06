@@ -1,0 +1,403 @@
+---
+version: alpha
+name: Meerkat Console
+description: >-
+  The design language for the Meerkat MFT console: a calm, dense, dark-only operations console for administrators
+  who move files between systems and must prove that every file arrived unchanged.
+---
+
+# Meerkat Console
+
+This file is the source of truth for how the console looks and behaves. It follows the [DESIGN.md format](https://github.com/google-labs-code/design.md): the YAML blocks hold the exact values, and the prose says why. Check it with `npx @google/design.md@0.4.0 lint design/DESIGN.md`, which also checks the contrast of every component's colours. The decisions come from the design review for #5.
+
+## Overview
+
+The console is a tool for operations. The people who use it run file movement for an organization: platform engineers, integration teams, and whoever is on call when a nightly run fails. They open it to answer a question fast and get back to work: did last night's run deliver everything, why did this one file fail, can I show an auditor this file arrived unchanged.
+
+It should feel like calm enterprise infrastructure: trustworthy, quiet, and confident. The confidence comes from alignment, spacing, and consistency, never from decoration. There are no gradients, textures, illustrations, or novelty type. Colour appears only where it means something.
+
+- **Dark only.** There is no light theme, and none will be added.
+- **Dense.** Compact by default: 13px text and 32px table rows, so a run with hundreds of deliveries fits on screen. A comfortable mode may come later, by moving the base to 14px, without a redesign.
+- **Desktop only.** It's built for a full-screen browser on a 1080p display or larger, and it makes full use of 1440p and 6K displays. A mobile app would be a separate product with its own scope.
+- **Evidence first.** A delivery is only proven when the source has signed its manifest and the destination its receipt. The console makes evidence as visible as status.
+- **The console never approves.** Flow approval and credential entry happen only in the signed CLI. The console shows that something waits for approval, who approved it, and the exact command, but it never offers an approve button or takes a credential.
+
+## Colors
+
+Every colour comes from the logo's navy (`#14202E`) and its amber (`#E2A04A`). Surfaces form a ladder of six navy steps: darker means further back. Each step is the same small increase in lightness, so the hierarchy reads without borders.
+
+- **Primary, amber (`#E2A04A`):** the brand and the one primary action on a screen. It also marks the selected item's leading edge and the keyboard focus ring. Amber never means a status, so no warning, error, or progress state uses it.
+- **Surface ladder:** the sidebar is the darkest step, recessed as the frame. Then the page, then the list and content, then the opened item's detail and resource menu, then hover, then floating layers: menus, dialogs, and the panel when it overlays the page.
+- **Text:** a cool off-white for primary text, and a muted blue-grey for metadata and labels.
+- **Status:** green for succeeded, red for failed, violet for warning and retrying, blue for in progress, and slate for cancelled. Violet keeps warnings well clear of the brand's amber. Every status also has an icon and a label, so colour is never the only signal.
+- **Status containers:** each status has a dark tinted background for chips, made by mixing 16% of the status colour into the content surface.
+
+Every text colour below is at least 4.5:1 against every surface on the ladder and against its own container. Every status colour is at least 3:1 against every surface for icons and marks.
+
+```yaml
+colors:
+  primary: "#E2A04A"
+  primary-hover: "#E5AB60"
+  on-primary: "#1A1208"
+  surface-sidebar: "#0B111A"
+  surface-page: "#0F1724"
+  surface-content: "#141E2D"
+  surface-detail: "#192637"
+  surface-raised: "#1F2E42"
+  surface-floating: "#26374E"
+  on-surface: "#E6ECF4"
+  on-surface-muted: "#97A8C0"
+  success: "#4CC38A"
+  success-container: "#1D383C"
+  error: "#FF7378"
+  error-container: "#3A2C39"
+  warning: "#B0A0FF"
+  warning-container: "#2D334F"
+  info: "#5EAEF5"
+  info-container: "#20354D"
+  cancelled: "#9AABC2"
+  cancelled-container: "#293545"
+  scrim: "#05080D"
+```
+
+## Typography
+
+One family, **Ubuntu Sans**, sets the whole interface, with **Ubuntu Sans Mono** for anything a person might compare or copy: IDs, hashes, error codes, file paths, and commands. Both are self-hosted, because the console's content security policy allows no third-party fonts.
+
+- **Three weights only:** 400 for text, 500 for labels and emphasis, 600 for titles and key numbers.
+- **Tabular figures** wherever numbers line up: tables, counts, sizes, timestamps, and durations.
+- **The base is 13px** for interface and table text. Labels and table headers are 11px, uppercase, with a little letter spacing.
+- **Titles stay small:** 16px for sections and 20px for pages. The data is the content, and the chrome stays quiet. 24px is for key numbers, such as how many deliveries need attention, and 32px is rare.
+
+```yaml
+typography:
+  label-sm:
+    fontFamily: Ubuntu Sans
+    fontSize: 11px
+    fontWeight: 500
+    lineHeight: 1.4
+    letterSpacing: 0.04em
+  body-sm:
+    fontFamily: Ubuntu Sans
+    fontSize: 12px
+    fontWeight: 400
+    lineHeight: 1.45
+  body-md:
+    fontFamily: Ubuntu Sans
+    fontSize: 13px
+    fontWeight: 400
+    lineHeight: 1.5
+  body-md-strong:
+    fontFamily: Ubuntu Sans
+    fontSize: 13px
+    fontWeight: 500
+    lineHeight: 1.5
+  body-lg:
+    fontFamily: Ubuntu Sans
+    fontSize: 14px
+    fontWeight: 400
+    lineHeight: 1.55
+  headline-sm:
+    fontFamily: Ubuntu Sans
+    fontSize: 16px
+    fontWeight: 600
+    lineHeight: 1.35
+  headline-md:
+    fontFamily: Ubuntu Sans
+    fontSize: 20px
+    fontWeight: 600
+    lineHeight: 1.3
+    letterSpacing: -0.01em
+  display-sm:
+    fontFamily: Ubuntu Sans
+    fontSize: 24px
+    fontWeight: 600
+    lineHeight: 1.2
+    fontFeature: '"tnum" 1'
+  display-md:
+    fontFamily: Ubuntu Sans
+    fontSize: 32px
+    fontWeight: 600
+    lineHeight: 1.15
+    letterSpacing: -0.01em
+    fontFeature: '"tnum" 1'
+  numeric-md:
+    fontFamily: Ubuntu Sans
+    fontSize: 13px
+    fontWeight: 400
+    lineHeight: 1.5
+    fontFeature: '"tnum" 1'
+  code-sm:
+    fontFamily: Ubuntu Sans Mono
+    fontSize: 11px
+    fontWeight: 400
+    lineHeight: 1.45
+  code-md:
+    fontFamily: Ubuntu Sans Mono
+    fontSize: 12px
+    fontWeight: 400
+    lineHeight: 1.5
+```
+
+## Layout
+
+The layout follows the master-detail model, as in large cloud consoles, with one firm limit on depth.
+
+- **Global sidebar:** the recessed frame on the left. It holds the workspace switcher, then Flows, Runs, Agents, Audit, and Settings, with an icon and a label each.
+- **List:** the section's items, such as runs or agents, with filters above them.
+- **Opened item:** selecting an item opens it next to the list. It has its own **resource menu**, such as Overview, Versions, Runs, and Settings for a flow, or Overview, Deliveries, Identity, and Activity for an agent.
+- **One deeper level:** an item inside an opened item, such as a delivery inside a run, opens in a **panel** on the right, with breadcrumbs. There's never a second panel. Going deeper replaces the panel's content.
+- **Addresses:** every list, item, and panel has its own address, so links can be shared and the browser's back button always works.
+
+Width is used in this order:
+1. **1080p:** the panel slides over the page, with the floating surface and a shadow.
+2. **From 1600px wide:** the panel docks beside the page and can stay open.
+3. **Wider still:** the remaining width goes to more table columns.
+
+Data views (tables, the flow canvas, timelines) fill the width. Forms, settings, and prose are capped at a 72-character line.
+
+Spacing uses a 4px grid. Rows are 32px. Groups are separated by space and surface steps, not by lines.
+
+The global top bar holds the breadcrumbs, a command palette on `Ctrl/⌘ K` for jumping to any flow, run, agent, or delivery by name or ID, the orchestrator and relay connection status, the alerts indicator, and the user menu.
+
+```yaml
+spacing:
+  xxs: 2px
+  xs: 4px
+  sm: 8px
+  md: 12px
+  lg: 16px
+  xl: 24px
+  xxl: 32px
+  row: 32px
+  control: 32px
+  topbar: 48px
+  sidebar: 232px
+  sidebar-collapsed: 56px
+  list-pane: 360px
+  resource-menu: 200px
+  panel: 440px
+  panel-dock-min-viewport: 1600px
+  measure-ch: 72
+```
+
+## Elevation & Depth
+
+Depth comes from the **surface ladder**, not from lines or shadows. A thing that sits in front is one step lighter than what's behind it. Borders are kept to a minimum. A hairline appears only where two areas share a surface step and still need separating, such as columns in a dense table. Even then it's the next surface step up, never a contrasting colour.
+
+Shadows are used only for things that float above the page: menus, dialogs, tooltips, and the panel when it overlays the page at 1080p. Floating layers use the floating surface, a soft shadow (`0 8px 24px` in the scrim colour at 45%), and a scrim behind modal dialogs.
+
+**Interaction states** stay inside the same language:
+
+- **Hover:** the item lifts one surface step.
+- **Selected:** the item lifts two surface steps and gets a 2px amber edge on its leading side.
+- **Keyboard focus:** a 2px amber ring with a 2px offset, always visible. It's never removed, and never replaced by a hover style.
+- **Disabled:** the muted text colour, with no hover or selected state.
+
+## Shapes
+
+One small radius, **4px**, everywhere: buttons, inputs, chips, rows, panels, menus, and dialogs. The same corner on every object is a large part of what makes the console feel like one system. Status and evidence marks are the only round shapes.
+
+```yaml
+rounded:
+  none: 0px
+  sm: 4px
+  full: 9999px
+```
+
+## Components
+
+Component tokens set each component's surface, text, shape, and size. Behaviour and content rules follow below the tokens.
+
+```yaml
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.body-md-strong}"
+    rounded: "{rounded.sm}"
+    height: 32px
+    padding: 12px
+  button-primary-hover:
+    backgroundColor: "{colors.primary-hover}"
+    textColor: "{colors.on-primary}"
+  button-secondary:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md-strong}"
+    rounded: "{rounded.sm}"
+    height: 32px
+    padding: 12px
+  button-secondary-hover:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+  nav-item:
+    backgroundColor: "{colors.surface-sidebar}"
+    textColor: "{colors.on-surface-muted}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+    height: 32px
+  nav-item-hover:
+    backgroundColor: "{colors.surface-page}"
+    textColor: "{colors.on-surface}"
+  nav-item-selected:
+    backgroundColor: "{colors.surface-content}"
+    textColor: "{colors.on-surface}"
+  list-row:
+    backgroundColor: "{colors.surface-content}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+    height: 32px
+  list-row-hover:
+    backgroundColor: "{colors.surface-detail}"
+    textColor: "{colors.on-surface}"
+  list-row-selected:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.on-surface}"
+  table-header:
+    backgroundColor: "{colors.surface-content}"
+    textColor: "{colors.on-surface-muted}"
+    typography: "{typography.label-sm}"
+    height: 28px
+  resource-menu-item:
+    backgroundColor: "{colors.surface-detail}"
+    textColor: "{colors.on-surface-muted}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+    height: 32px
+  resource-menu-item-selected:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+  panel:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+    width: 440px
+  menu:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+  dialog:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.sm}"
+  dialog-scrim:
+    backgroundColor: "{colors.scrim}"
+  tooltip:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+  input:
+    backgroundColor: "{colors.surface-sidebar}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md}"
+    rounded: "{rounded.sm}"
+    height: 32px
+    padding: 8px
+  code-block:
+    backgroundColor: "{colors.surface-sidebar}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.code-md}"
+    rounded: "{rounded.sm}"
+    padding: 8px
+  chip-success:
+    backgroundColor: "{colors.success-container}"
+    textColor: "{colors.success}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+  chip-error:
+    backgroundColor: "{colors.error-container}"
+    textColor: "{colors.error}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+  chip-warning:
+    backgroundColor: "{colors.warning-container}"
+    textColor: "{colors.warning}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+  chip-info:
+    backgroundColor: "{colors.info-container}"
+    textColor: "{colors.info}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+  chip-cancelled:
+    backgroundColor: "{colors.cancelled-container}"
+    textColor: "{colors.cancelled}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+```
+
+### Status
+
+Each delivery and run status has a colour, a Lucide icon, and a label, always shown together:
+
+| Status | Colour | Icon | Label |
+| --- | --- | --- | --- |
+| `succeeded` | `success` | `circle-check` | Succeeded |
+| `failed` | `error` | `circle-x` | Failed |
+| `retry_wait` | `warning` | `rotate-cw` | Retrying |
+| `partial_failure` | `warning` | `circle-alert` | Partial failure |
+| `pending`, `claimed`, `transferring`, `verifying` | `info` | `clock` | Waiting, Claimed, Transferring, Verifying |
+| `cancelled` | `cancelled` | `ban` | Cancelled |
+
+### Evidence
+
+Evidence is shown as **two marks**: the first for the source's signed manifest, the second for the destination's signed receipt. A filled mark means signed, and an outlined mark means missing. Both filled reads `verified` in the success colour. One filled reads `source_only` in the primary text colour. None filled reads `none` in the muted colour. The label always sits beside the marks.
+
+### Untrusted text
+
+File names, agent names, and error codes come from agents and administrators. They're always shown as plain text, never as markup. File names can be missing once retention has deleted them, so every view must still make sense without one. A missing name reads "Name deleted by retention" in the muted colour. Error codes appear in the mono face exactly as stored.
+
+### Approval
+
+Where a flow version waits for approval, the console shows the waiting state, who has approved so far, and the exact CLI command in a code block with a copy button. There's never an approve button.
+
+## Motion
+
+Motion is part of the design, not decoration. Every animation answers one of two questions: **where did this come from**, or **what just changed**.
+
+- **Space:** the panel slides in from the right edge, menus open from their trigger, and an opened item grows from the row that was selected.
+- **State:** a delivery changing status animates its icon and chip. A transfer in progress shows live progress. Counts, such as deliveries that need attention, tick to their new value instead of jumping. A newly signed statement fills its evidence mark.
+- **Never:** lists don't animate in row by row, pages don't make entrances, and nothing moves on its own when nothing has changed.
+
+There are three durations and one easing family:
+
+| Token | Duration | Used for |
+| --- | --- | --- |
+| `fast` | 120ms | hover, focus, small state changes |
+| `base` | 220ms | menus, chips, counts, evidence marks |
+| `slow` | 360ms | the panel, opening an item, layout changes |
+
+Easing is `cubic-bezier(0.2, 0, 0, 1)` for things entering or changing, and `cubic-bezier(0.3, 0, 1, 1)` at the fast duration for things leaving.
+
+A **reduce motion** setting in the user's preferences, which follows the operating system's preference by default, replaces every movement with an instant change or a fade of 120ms or less. Live progress still updates, but without animating between values.
+
+## Iconography
+
+Icons come from **Lucide**, the outline style only, at a 1.5px stroke. They are 16px in navigation, rows, and chips, and 20px in the top bar and empty states. In navigation, status, and actions, an icon always has a text label beside it. A bare icon is allowed only in a toolbar of well-known actions, such as copy, open, and more, and it then has a tooltip and an accessible name. Meerkat-specific marks, such as the two evidence marks, are drawn by us in the same stroke.
+
+## Accessibility
+
+WCAG 2.2 AA is a hard rule, built into these tokens rather than fixed screen by screen:
+
+- **Contrast:** at least 4.5:1 for text, and 3:1 for interface parts, status icons, and evidence marks.
+- **Keyboard:** everything can be done by keyboard, in a logical order, with the focus ring always visible.
+- **No colour alone:** nothing is shown by colour alone.
+- **Zoom:** every page works at 200% zoom.
+- **Motion:** the reduce motion setting is respected everywhere.
+
+## Do's and Don'ts
+
+- Do use amber once per screen, for the main action, plus the selected item's edge and the focus ring. Don't use it for status, charts, or decoration.
+- Do separate areas with surface steps and space. Don't reach for borders, dividers, or boxes around everything.
+- Do pair every status colour with its icon and label. Don't rely on colour alone.
+- Do show IDs, hashes, error codes, and commands in the mono face, and make them easy to copy.
+- Do keep the 4px radius everywhere. Don't mix radii or round corners more for emphasis.
+- Do keep titles small and let data be the content. Don't add hero areas, illustrations, gradients, or textures.
+- Do give every item its own address. Don't open a second panel or stack panels.
+- Do show what waits for approval and the exact CLI command. Don't add an approve button or take a credential in the console.
+- Do show untrusted names as plain text, and handle a missing file name. Don't render agent-reported text as markup.
+- Do animate to explain space and state, and honour reduce motion. Don't animate for decoration.
+- Don't add a light theme.
