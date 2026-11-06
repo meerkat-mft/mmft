@@ -211,3 +211,13 @@ func TestRepeatInstallIsSafeOnlyWhenNothingChanged(t *testing.T) {
 		t.Fatalf("missing key file: %d %s", code, errOut)
 	}
 }
+
+func TestRunNeedsAnEnrolledAgent(t *testing.T) {
+	code, _, errOut := cli(t, "run", "--dir", filepath.Join(t.TempDir(), "agent"))
+	if code != exitFailure || !strings.Contains(parseJSON(t, errOut)["error"], "not enrolled") {
+		t.Fatalf("run: %d %s", code, errOut)
+	}
+	if code, _, _ := cli(t, "run", "extra"); code != exitUsage {
+		t.Fatalf("run with an argument: %d", code)
+	}
+}

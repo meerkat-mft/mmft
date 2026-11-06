@@ -2,7 +2,8 @@
 // and has stable exit codes, so deployment tools can run it. Output is JSON,
 // except version and the default fingerprint output, which are plain text for a
 // person comparing fingerprints on the host, and usage errors. Exit codes are
-// listed in docs/naming.md.
+// listed in docs/naming.md. `run` keeps the agent connected until it is
+// stopped, and prints one JSON line per connection event.
 package main
 
 import (
@@ -13,8 +14,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -48,6 +51,7 @@ const usage = `usage:
                      --ca-fingerprint HEX --root-fingerprint HEX [--dir DIR]
   mmft-agent fingerprint [--dir DIR] [--json]
   mmft-agent identity [--dir DIR]
+  mmft-agent run [--dir DIR]
 
 exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused, 5 waiting for approval
 `
@@ -99,6 +103,8 @@ func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		return fingerprint(rest, stdout, stderr)
 	case "identity":
 		return identity(rest, stdout, stderr, now)
+	case "run":
+		return runAgent(rest, stdout, stderr, now)
 	default:
 		return errUsage
 	}
@@ -243,4 +249,18 @@ func identity(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		"fingerprint": claim.Keys().Fingerprint(),
 		"not_after":   claim.NotAfter.Format(time.RFC3339),
 	})
+}
+
+// runAgent keeps the agent connected until SIGINT or SIGTERM, which end it
+// with exit 0. An expired connection certificate ends it with exit 1 and says
+// how to fix it.
+func runAgent(args []string, stdout, stderr io.Writer, now func() time.Time) error {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	dir := fs.String("dir", defaultDir, "directory for the agent's keys and state")
+	if err := parse(fs, args, stderr); err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return agent.Run(ctx, *dir, agent.RunConfig{Log: stdout, Now: now})
 }

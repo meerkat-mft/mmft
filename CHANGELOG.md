@@ -17,9 +17,13 @@ All notable changes to this project are documented here. The format follows [Kee
 - `GET /api/v1/agents/{agent_id}` returns one agent, and unknown API paths answer with a problem document.
 - Exit codes are the same for `mmft` and `mmft-agent`, and are listed in the usage text and `docs/naming.md`.
 - `mmft-agent identity` fetches the agent's signed identity and verifies it back to the pinned trust root. It exits with code 5 until the agent is approved.
+- `mmft-agent run` keeps the agent connected to the orchestrator over one outbound stream, with a heartbeat every 30 seconds. It reconnects with backoff after a dropped connection or a restart, and renews its connection certificate once it is past half its lifetime, keeping the same key. An expired certificate stops it with exit 1 and says to install again with a new token.
+- The agent listing and `GET /api/v1/agents/{agent_id}` return `agent_version` and `last_seen_at` once an agent has connected.
+- `MMFT_CONNECTION_LIFETIME` sets how long the orchestrator's connection certificates last, from 2 minutes to the default 24 hours. Only the lab sets it short.
 - Signed releases: each tag publishes binaries, container images, and SBOMs, signed with Sigstore Cosign. See SECURITY.md for how to verify them.
 
 ### Security
 
+- An agent's open stream is checked again at every heartbeat, so revoking an agent ends its stream within 30 seconds instead of at its next reconnect. A stream that sends nothing for 90 seconds is closed.
 - The orchestrator bounds what one network peer can hold open: 1024 connections per listener, 32 gRPC streams per connection, idle gRPC connections closed after 5 minutes, and read, write, and idle timeouts on the REST API. Before, a peer needing no credential could hold goroutines and descriptors open indefinitely.
 - On Windows, `mmft` now refuses to create or read private key and passphrase files, because it can't yet check that they are private there. Use Linux, macOS, or WSL for `trust init`, `admin init`, `trust certify-admin`, and other commands that use them.

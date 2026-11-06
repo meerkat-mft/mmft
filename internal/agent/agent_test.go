@@ -544,7 +544,7 @@ func TestAgentIDMustComeFromTheKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	der, err := ca.SignAgent(csr, other, time.Now())
+	der, err := ca.SignAgent(csr, other, time.Now(), connca.ConnectionLifetime)
 	if err != nil {
 		t.Fatal(err)
 	}

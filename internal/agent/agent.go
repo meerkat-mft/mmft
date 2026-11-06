@@ -451,18 +451,29 @@ func loadCertificate(dir string, s State, keys *Keys, now time.Time) (*x509.Cert
 	if err != nil {
 		return nil, err
 	}
+	if err := checkConnection(cert, ca, s.AgentID, keys.Connection, now); err != nil {
+		return nil, err
+	}
+	return cert, nil
+}
+
+// checkConnection requires a connection certificate to hold the agent's
+// connection key, name its ID, and chain to the pinned CA for client use at
+// now. It returns ErrCertificateExpired for a certificate that has only
+// expired, and ErrDamaged for anything else wrong.
+func checkConnection(cert, ca *x509.Certificate, agentID string, key ed25519.PrivateKey, now time.Time) error {
 	if cert.CheckSignatureFrom(ca) != nil {
-		return nil, ErrDamaged
+		return ErrDamaged
 	}
 	pub, ok := cert.PublicKey.(ed25519.PublicKey)
-	if !ok || !pub.Equal(keys.Connection.Public()) {
-		return nil, ErrDamaged
+	if !ok || !pub.Equal(key.Public()) {
+		return ErrDamaged
 	}
-	if id, err := connca.AgentID(cert); err != nil || id != s.AgentID {
-		return nil, ErrDamaged
+	if id, err := connca.AgentID(cert); err != nil || id != agentID {
+		return ErrDamaged
 	}
 	if !now.Before(cert.NotAfter) {
-		return nil, ErrCertificateExpired
+		return ErrCertificateExpired
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
@@ -471,9 +482,9 @@ func loadCertificate(dir string, s State, keys *Keys, now time.Time) (*x509.Cert
 		CurrentTime: now,
 		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrDamaged, err)
+		return fmt.Errorf("%w: %w", ErrDamaged, err)
 	}
-	return cert, nil
+	return nil
 }
 
 // checkSignedBy requires the new connection certificate to be signed by the

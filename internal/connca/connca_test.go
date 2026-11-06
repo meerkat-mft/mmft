@@ -88,7 +88,7 @@ func TestLoadRejectsMismatchedKey(t *testing.T) {
 
 func TestSignAgent(t *testing.T) {
 	a := authority(t)
-	der, err := a.SignAgent(request(t, &x509.CertificateRequest{}), agentID, now)
+	der, err := a.SignAgent(request(t, &x509.CertificateRequest{}), agentID, now, ConnectionLifetime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +101,9 @@ func TestSignAgent(t *testing.T) {
 	}
 	if got := cert.NotAfter.Sub(now); got != ConnectionLifetime {
 		t.Fatalf("lifetime = %v", got)
+	}
+	if !IssuedAt(cert).Equal(now) {
+		t.Fatalf("issued at %v, want %v", IssuedAt(cert), now)
 	}
 	if cert.IsCA {
 		t.Fatal("agent certificate is a CA")
@@ -130,7 +133,7 @@ func TestRequestCannotChooseItsOwnIdentity(t *testing.T) {
 		Subject:  pkix.Name{CommonName: "orchestrator"},
 		DNSNames: []string{"orchestrator"},
 		URIs:     []*url.URL{spoofed},
-	}), agentID, now)
+	}), agentID, now, ConnectionLifetime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,18 +152,18 @@ func TestRequestCannotChooseItsOwnIdentity(t *testing.T) {
 func TestSignAgentRejects(t *testing.T) {
 	a := authority(t)
 	good := request(t, &x509.CertificateRequest{})
-	if _, err := a.SignAgent(good, "not-a-uuid", now); !errors.Is(err, ErrInvalidAgentID) {
+	if _, err := a.SignAgent(good, "not-a-uuid", now, ConnectionLifetime); !errors.Is(err, ErrInvalidAgentID) {
 		t.Fatalf("bad ID: %v", err)
 	}
-	if _, err := a.SignAgent(good[:20], agentID, now); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := a.SignAgent(good[:20], agentID, now, ConnectionLifetime); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("damaged request: %v", err)
 	}
-	if _, err := a.SignAgent(make([]byte, maxCSRBytes+1), agentID, now); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := a.SignAgent(make([]byte, maxCSRBytes+1), agentID, now, ConnectionLifetime); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("large request: %v", err)
 	}
 	tampered := append([]byte(nil), good...)
 	tampered[len(tampered)-1] ^= 1
-	if _, err := a.SignAgent(tampered, agentID, now); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := a.SignAgent(tampered, agentID, now, ConnectionLifetime); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("bad signature: %v", err)
 	}
 	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -171,8 +174,28 @@ func TestSignAgentRejects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.SignAgent(der, agentID, now); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := a.SignAgent(der, agentID, now, ConnectionLifetime); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("wrong key type: %v", err)
+	}
+	for _, d := range []time.Duration{0, MinConnectionLifetime - time.Second, ConnectionLifetime + time.Second} {
+		if _, err := a.SignAgent(good, agentID, now, d); !errors.Is(err, ErrInvalidLifetime) {
+			t.Fatalf("lifetime %v: %v", d, err)
+		}
+	}
+}
+
+func TestSignAgentWithAShortLifetime(t *testing.T) {
+	a := authority(t)
+	der, err := a.SignAgent(request(t, &x509.CertificateRequest{}), agentID, now, MinConnectionLifetime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cert.NotAfter.Sub(now); got != MinConnectionLifetime {
+		t.Fatalf("lifetime = %v", got)
 	}
 }
 

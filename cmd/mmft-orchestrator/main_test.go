@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
+
+	"mmft.dev/mmft/internal/connca"
 )
 
 func TestRun(t *testing.T) {
@@ -34,5 +37,18 @@ func TestRun(t *testing.T) {
 				t.Fatalf("stderr leaks the password: %q", errOut.String())
 			}
 		})
+	}
+}
+
+func TestConnectionLifetime(t *testing.T) {
+	for v, want := range map[string]time.Duration{"": connca.ConnectionLifetime, "2m": 2 * time.Minute, "24h": 24 * time.Hour} {
+		if got, err := connectionLifetime(v); err != nil || got != want {
+			t.Errorf("%q = %v, %v", v, got, err)
+		}
+	}
+	for _, v := range []string{"1m", "25h", "soon", "-5m"} {
+		if _, err := connectionLifetime(v); err == nil {
+			t.Errorf("%q accepted", v)
+		}
 	}
 }

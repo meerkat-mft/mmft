@@ -102,7 +102,7 @@ func clientCert(t *testing.T, ca *connca.Authority, id string) tls.Certificate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	der, err := ca.SignAgent(csr, id, time.Now())
+	der, err := ca.SignAgent(csr, id, time.Now(), connca.ConnectionLifetime)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,15 +120,24 @@ func (h harness) dial(t *testing.T, certs ...tls.Certificate) *grpc.ClientConn {
 	return conn
 }
 
+// callConnect opens a stream, sends a Hello, and returns the code of the
+// first reply: OK for a Welcome.
 func callConnect(t *testing.T, conn *grpc.ClientConn) codes.Code {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	stream, err := agentv1.NewAgentServiceClient(conn).Connect(ctx)
 	if err == nil {
+		// A refused stream can fail the send with io.EOF. The status comes
+		// from the receive either way.
+		_ = stream.Send(hello(ProtocolVersion))
 		_, err = stream.Recv()
 	}
 	return status.Code(err)
+}
+
+func hello(protocol uint32) *agentv1.ConnectRequest {
+	return &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{ProtocolVersion: protocol, AgentVersion: "test"}}}
 }
 
 func TestEnrollmentNeedsNoCertificate(t *testing.T) {
@@ -147,7 +156,7 @@ func TestAgentServiceRequiresACertificate(t *testing.T) {
 		t.Fatalf("no certificate: %v", got)
 	}
 	h.addAgent(t, agentID, "approved")
-	if got := callConnect(t, h.dial(t, clientCert(t, h.ca, agentID))); got != codes.Unimplemented {
+	if got := callConnect(t, h.dial(t, clientCert(t, h.ca, agentID))); got != codes.OK {
 		t.Fatalf("valid certificate: %v", got)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -181,7 +190,7 @@ func TestAgentServiceChecksAgentStatus(t *testing.T) {
 	for _, s := range []string{"pending_approval", "approved"} {
 		id := "019a3f2e-7c11-7d3e-9f7b-00000000000" + map[string]string{"pending_approval": "1", "approved": "2"}[s]
 		h.addAgent(t, id, s)
-		if got := callConnect(t, h.dial(t, clientCert(t, h.ca, id))); got != codes.Unimplemented {
+		if got := callConnect(t, h.dial(t, clientCert(t, h.ca, id))); got != codes.OK {
 			t.Fatalf("%s agent: %v", s, got)
 		}
 	}
@@ -222,7 +231,7 @@ func TestCertificateFromAnotherCAIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := callConnect(t, h.dial(t, clientCert(t, other, agentID))); got == codes.Unimplemented {
+	if got := callConnect(t, h.dial(t, clientCert(t, other, agentID))); got == codes.OK {
 		t.Fatal("foreign certificate reached the service")
 	}
 }
@@ -233,7 +242,7 @@ func TestServerCertificateCannotActAsAnAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := callConnect(t, h.dial(t, *c)); got == codes.Unimplemented {
+	if got := callConnect(t, h.dial(t, *c)); got == codes.OK {
 		t.Fatal("server certificate reached the service")
 	}
 }
@@ -297,12 +306,14 @@ func TestNewValidatesConfig(t *testing.T) {
 	good := strings.Repeat("a", 64)
 	pool := dbtest.Pool(t)
 	for name, cfg := range map[string]Config{
-		"no CA":       {DB: pool, Names: []string{"x"}, AdminTokenSHA256: good},
-		"no database": {Authority: ca, Names: []string{"x"}, AdminTokenSHA256: good},
-		"no names":    {Authority: ca, DB: pool, AdminTokenSHA256: good},
-		"no hash":     {Authority: ca, DB: pool, Names: []string{"x"}},
-		"short hash":  {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: "abcd"},
-		"not hex":     {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: strings.Repeat("z", 64)},
+		"no CA":              {DB: pool, Names: []string{"x"}, AdminTokenSHA256: good},
+		"no database":        {Authority: ca, Names: []string{"x"}, AdminTokenSHA256: good},
+		"no names":           {Authority: ca, DB: pool, AdminTokenSHA256: good},
+		"no hash":            {Authority: ca, DB: pool, Names: []string{"x"}},
+		"short hash":         {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: "abcd"},
+		"not hex":            {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: strings.Repeat("z", 64)},
+		"short certificates": {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: good, ConnectionLifetime: time.Minute},
+		"long certificates":  {Authority: ca, DB: pool, Names: []string{"x"}, AdminTokenSHA256: good, ConnectionLifetime: 25 * time.Hour},
 	} {
 		if _, err := New(cfg); err == nil {
 			t.Errorf("%s accepted", name)

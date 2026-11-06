@@ -30,6 +30,9 @@ const (
 	caLifetime = 5 * 365 * 24 * time.Hour
 	// ConnectionLifetime is how long an agent's certificate lasts, from ADR 0011.
 	ConnectionLifetime = 24 * time.Hour
+	// MinConnectionLifetime is the shortest lifetime SignAgent accepts. Shorter
+	// lifetimes exist only so the lab can test renewal quickly.
+	MinConnectionLifetime = 2 * time.Minute
 	// ServerLifetime is how long a server certificate lasts before it's replaced.
 	ServerLifetime = 7 * 24 * time.Hour
 
@@ -42,9 +45,10 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 // Errors returned by this package.
 var (
-	ErrInvalidRequest = errors.New("connca: invalid certificate request")
-	ErrInvalidAgentID = errors.New("connca: invalid agent ID")
-	ErrNotAnAgent     = errors.New("connca: certificate does not identify an agent")
+	ErrInvalidRequest  = errors.New("connca: invalid certificate request")
+	ErrInvalidAgentID  = errors.New("connca: invalid agent ID")
+	ErrNotAnAgent      = errors.New("connca: certificate does not identify an agent")
+	ErrInvalidLifetime = errors.New("connca: the connection certificate lifetime must be from 2 minutes to 24 hours")
 )
 
 // Authority is a loaded connection CA.
@@ -205,8 +209,11 @@ func (a *Authority) ServerCertificate(names []string, now time.Time) (*tls.Certi
 
 // SignAgent issues a connection certificate for a verified agent. It takes only
 // the public key from the request, so that a request can't choose its own names,
-// usages, or lifetime.
-func (a *Authority) SignAgent(csrDER []byte, agentID string, now time.Time) ([]byte, error) {
+// usages, or lifetime. The lifetime is ConnectionLifetime outside the lab.
+func (a *Authority) SignAgent(csrDER []byte, agentID string, now time.Time, lifetime time.Duration) ([]byte, error) {
+	if lifetime < MinConnectionLifetime || lifetime > ConnectionLifetime {
+		return nil, ErrInvalidLifetime
+	}
 	if !uuidPattern.MatchString(agentID) {
 		return nil, ErrInvalidAgentID
 	}
@@ -232,12 +239,18 @@ func (a *Authority) SignAgent(csrDER []byte, agentID string, now time.Time) ([]b
 		SerialNumber: serial(),
 		Subject:      pkix.Name{CommonName: "Meerkat MFT agent"},
 		NotBefore:    now.Add(-clockSkew),
-		NotAfter:     now.Add(ConnectionLifetime),
+		NotAfter:     now.Add(lifetime),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		URIs:         []*url.URL{uri},
 	}
 	return x509.CreateCertificate(rand.Reader, template, a.cert, pub, a.key)
+}
+
+// IssuedAt returns when a certificate from this CA was issued. NotBefore is
+// set earlier than that, to allow for clock skew.
+func IssuedAt(cert *x509.Certificate) time.Time {
+	return cert.NotBefore.Add(clockSkew)
 }
 
 // AgentID returns the agent ID in a verified connection certificate.
