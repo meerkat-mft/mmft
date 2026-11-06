@@ -1,8 +1,9 @@
 #!/bin/sh
-# Enrolls both lab agents, runs them, and checks that they stay connected,
-# reconnect after an agent or orchestrator restart, and renew their connection
-# certificates before they expire (failure test C1). The orchestrator issues
-# 2-minute certificates here, so the whole run takes about four minutes.
+# Enrolls both lab agents, checks that both reach the relay, runs them, and
+# checks that they stay connected, reconnect after an agent or orchestrator
+# restart, and renew their connection certificates before they expire (failure
+# test C1). The orchestrator issues 2-minute certificates here, so the whole
+# run takes about four minutes.
 set -eu
 cd "$(dirname "$0")"
 
@@ -59,6 +60,13 @@ seen_after() {
   if [ "$n" = 1 ]; then pass "$label"; else fail "$label"; fi
 }
 db_now() { sql "SELECT now()"; }
+
+for host in agent-a agent-b; do
+  label="$host reaches the relay"
+  expect_code 0 in_lab "$host" nc -z -w 2 relay 7445
+done
+label="the relay reports its certificate hash"
+if [ "${#relay_fp}" = 64 ]; then pass "$label"; else fail "$label"; fi
 
 echo "Starting both agents..."
 mark=$(db_now)

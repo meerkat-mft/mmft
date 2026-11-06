@@ -8,6 +8,7 @@ admin_token="lab-only-admin-token-not-a-secret"
 passphrase="lab-only-passphrase-not-a-secret"
 
 admin=/var/lib/mmft/admin
+relay=/var/lib/mmft/relay
 state=/var/lib/mmft/agent
 spool=/var/lib/mmft/spool
 
@@ -46,15 +47,39 @@ start_orchestrator() {
   exit 1
 }
 
-# setup_lab starts the lab and the orchestrator, and sets up the admin machine
-# with a trust root, an administrator key, and its certificate. It sets ca_fp
-# and root_fp. Arguments go to start_orchestrator.
+# start_relay gives the relay the orchestrator's connection CA and ticket key,
+# creates its identity on first use, and starts it. It sets relay_fp, the
+# relay certificate hash the orchestrator will give agents with each ticket.
+start_relay() {
+  in_lab orchestrator cat /var/lib/mmft/ca/ca.crt | put relay "$relay/connection-ca.crt"
+  ticket_key=$(in_lab orchestrator mmft-orchestrator ca relay-settings | field relay_ticket_key)
+  if ! in_lab relay test -f "$relay/relay.crt"; then
+    in_lab relay mmft-relay init >/dev/null
+  fi
+  docker compose exec -d -T -e MMFT_RELAY_TICKET_KEY="$ticket_key" relay sh -c "exec mmft-relay serve >>$relay/relay.log 2>&1"
+  echo "Waiting for the relay to listen on 7445..."
+  for _ in $(seq 1 30); do
+    if in_lab relay nc -z localhost 7445 2>/dev/null; then
+      relay_fp=$(in_lab relay grep -m1 '"event":"started"' "$relay/relay.log" | field relay_certificate_sha256)
+      echo "The relay is ready."
+      return 0
+    fi
+    sleep 1
+  done
+  echo "FAIL: the relay did not start listening within 30 seconds"
+  exit 1
+}
+
+# setup_lab starts the lab, the orchestrator, and the relay, and sets up the
+# admin machine with a trust root, an administrator key, and its certificate.
+# It sets ca_fp, root_fp, and relay_fp. Arguments go to start_orchestrator.
 setup_lab() {
   echo "Starting the lab..."
   docker compose up --build --detach --wait --wait-timeout 120
   in_lab orchestrator mmft-orchestrator migrate >/dev/null
   ca_fp=$(in_lab orchestrator mmft-orchestrator ca init | field ca_fingerprint)
   start_orchestrator "$@"
+  start_relay
 
   echo "Setting up the admin machine..."
   printf '%s' "$passphrase" | put admin "$admin/passphrase"

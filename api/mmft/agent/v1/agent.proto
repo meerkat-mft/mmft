@@ -173,6 +173,9 @@ message RelayTicket {
   string delivery_id = 1;
   bytes ticket = 2;
   string relay_address = 3;
+  // SHA-256 of the relay's TLS certificate. The agent trusts the relay only if
+  // it presents this certificate. See ADR 0020.
+  bytes relay_certificate_sha256 = 4;
 }
 
 // AuditBatch carries events and the signed statement that covers them.
