@@ -8,7 +8,7 @@ description: >-
 
 # Meerkat Console
 
-This file is the source of truth for how the console looks and behaves. It follows the [DESIGN.md format](https://github.com/google-labs-code/design.md): the YAML blocks hold the exact values, and the prose says why. Check it with `npx @google/design.md@0.4.0 lint design/DESIGN.md`, which also checks the contrast of every component's colours. The decisions come from the design review for #5.
+This file is the source of truth for how the console looks and behaves. It follows the [DESIGN.md format](https://github.com/google-labs-code/design.md): the YAML blocks hold the exact values, and the prose says why. Check it with `npx @google/design.md@0.4.0 lint design/DESIGN.md`, which also checks the contrast of every component's colours. The decisions come from the design review for #5, and the Overview covers what that issue's brief set out.
 
 ## Overview
 
@@ -19,7 +19,10 @@ It should feel like calm enterprise infrastructure: trustworthy, quiet, and conf
 - **Dark only.** There is no light theme, and none will be added.
 - **Dense.** Compact by default: 13px text and 32px table rows, so a run with hundreds of deliveries fits on screen. A comfortable mode may come later, by moving the base to 14px, without a redesign.
 - **Desktop only.** It's built for a full-screen browser on a 1080p display or larger, and it makes full use of 1440p and 6K displays. A mobile app would be a separate product with its own scope.
+- **Partial failure is the normal hard case.** A run with 1 failed delivery among 400 must never look like a success. Design every run and list view for that case first: what needs attention leads, and successes recede.
 - **Evidence first.** A delivery is only proven when the source has signed its manifest and the destination its receipt. The console makes evidence as visible as status.
+- **Flows read as trees.** A flow is a tree of cards (ADR 0006): a trigger, a source, rules, then one path per destination, with failure paths and outcomes. Each path, and so each delivery it produces, must be readable on its own.
+- **Built on the public API.** Every screen uses only the public API, like any other client. When a design needs data the API doesn't offer yet, that's a gap to raise for the API, not something the console works around.
 - **The console never approves.** Flow approval and credential entry happen only in the signed CLI. The console shows that something waits for approval, who approved it, and the exact command, but it never offers an approve button or takes a credential.
 
 ## Colors
@@ -398,6 +401,8 @@ WCAG 2.2 AA is a hard rule, built into these tokens rather than fixed screen by 
 - Do keep titles small and let data be the content. Don't add hero areas, illustrations, gradients, or textures.
 - Do give every item its own address. Don't open a second panel or stack panels.
 - Do show what waits for approval and the exact CLI command. Don't add an approve button or take a credential in the console.
+- Do lead every run and list view with what needs attention. Don't let one failure among hundreds of successes look like a success.
+- Do list the API calls a new screen needs, and raise any that are missing. Don't design around data the public API doesn't provide.
 - Do show untrusted names as plain text, and handle a missing file name. Don't render agent-reported text as markup.
 - Do animate to explain space and state, and honour reduce motion. Don't animate for decoration.
 - Don't add a light theme.
