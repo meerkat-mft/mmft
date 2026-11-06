@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -352,5 +353,34 @@ func TestReceiveFileRefusesASpoolFileLongerThanTheSealedSize(t *testing.T) {
 	defer cancel()
 	if err := ReceiveFile(ctx, l.b, receive, dst, 10, fastRetry); !errors.Is(err, ErrSpoolTooLong) {
 		t.Fatalf("ReceiveFile = %v, want ErrSpoolTooLong", err)
+	}
+}
+
+func TestReceiveFileSyncsInBatches(t *testing.T) {
+	var syncs atomic.Int32
+	syncFile = func(f *os.File) error {
+		syncs.Add(1)
+		return f.Sync()
+	}
+	t.Cleanup(func() { syncFile = (*os.File).Sync })
+	l := startRelayLab(t)
+	// 9 MiB is 36 chunks: two full batches and the end of the file.
+	src, data := sealedFile(t, 9<<20)
+	dst := filepath.Join(t.TempDir(), "spool")
+	send, receive := l.tickets(t, l.relayAddr, time.Now().Add(relayticket.Lifetime))
+	sent := background(t, func(ctx context.Context) error { return SendFile(ctx, l.a, send, src, fastRetry) })
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := ReceiveFile(ctx, l.b, receive, dst, uint64(len(data)), fastRetry); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-sent; err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(dst); !bytes.Equal(got, data) {
+		t.Fatal("the received file differs")
+	}
+	if n := syncs.Load(); n != 3 {
+		t.Fatalf("%d syncs, want 3", n)
 	}
 }

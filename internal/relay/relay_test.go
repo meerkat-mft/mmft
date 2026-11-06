@@ -674,3 +674,67 @@ func TestPinWithoutAFingerprintRefusesEveryRelay(t *testing.T) {
 		}
 	}
 }
+
+// bareServer is a relay with no listener, for driving join directly.
+func bareServer(limits Limits) *Server {
+	limits.defaults()
+	return &Server{cfg: Config{Limits: limits, Log: io.Discard, Now: time.Now}, pairings: map[string]*pairing{}, perAgent: map[string]int{}}
+}
+
+func side(delivery string, role relayticket.Role, holder, peer string) relayticket.Ticket {
+	return relayticket.Ticket{DeliveryID: delivery, Role: role, Holder: holder, Peer: peer, ExpiresAt: time.Now().Add(relayticket.Lifetime)}
+}
+
+func TestJoinDoesNotJoinAnEndedPairing(t *testing.T) {
+	s := bareServer(Limits{})
+	a, b, d := newDelivery(), newDelivery(), newDelivery()
+	waiting, _, err := s.join(side(d, relayticket.Receive, b, a), 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The receiver's wait timed out, but its handler hasn't left yet.
+	waiting.end(status.Error(codes.DeadlineExceeded, "the other side did not connect"))
+	p, _, err := s.join(side(d, relayticket.Send, a, b), 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == waiting || p.isPaired() {
+		t.Fatal("the sender joined a pairing that had already ended")
+	}
+}
+
+func TestARefusedReplacementLeavesThePairRunning(t *testing.T) {
+	s := bareServer(Limits{MaxWaiting: 1})
+	a, b, c := newDelivery(), newDelivery(), newDelivery()
+	d1, d2 := newDelivery(), newDelivery()
+	if _, _, err := s.join(side(d1, relayticket.Receive, b, a), 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	running, _, err := s.join(side(d1, relayticket.Send, a, b), 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Another delivery fills the only waiting slot.
+	if _, _, err := s.join(side(d2, relayticket.Receive, c, a), 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	// b reconnects, but its new side would have to wait, and no slot is free.
+	_, _, err = s.join(side(d1, relayticket.Receive, b, a), 0, 0)
+	wantCode(t, err, codes.ResourceExhausted)
+	if running.ended() {
+		t.Fatal("a refused replacement ended the running pair")
+	}
+}
+
+func TestAStreamClosedBeforeOpeningIsInvalid(t *testing.T) {
+	r := startRelay(t, Limits{}, nil)
+	stream, err := r.client(t, r.agent(t)).Receive(testContext(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = stream.Recv()
+	wantCode(t, err, codes.InvalidArgument)
+}

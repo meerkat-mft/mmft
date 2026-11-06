@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	mrand "math/rand/v2"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -22,9 +21,18 @@ import (
 	"mmft.dev/mmft/internal/relay"
 )
 
-// chunkSize is the size of each data message to the relay, well under the
-// relay's 1 MiB limit.
-const chunkSize = 256 << 10
+const (
+	// chunkSize is the size of each data message to the relay, well under the
+	// relay's 1 MiB limit.
+	chunkSize = 256 << 10
+	// syncEvery is how many received bytes the agent writes before it syncs
+	// and acknowledges them. A sync per chunk would cap throughput on slow
+	// disks.
+	syncEvery = 4 << 20
+)
+
+// syncFile syncs a spool file. Tests replace it to count syncs.
+var syncFile = (*os.File).Sync
 
 // Errors from sending and receiving through the relay.
 var (
@@ -107,7 +115,7 @@ func (t *relaySide) client() (relayv1.RelayServiceClient, func(), error) {
 // retry runs attempt until it succeeds, fails for good, or ctx ends. An
 // attempt reports whether it made progress, which resets the backoff.
 func (t *relaySide) retry(ctx context.Context, attempt func(context.Context, relayv1.RelayServiceClient) (bool, error)) error {
-	backoff := t.cfg.MinBackoff
+	backoff := newBackoff(t.cfg.MinBackoff, t.cfg.MaxBackoff)
 	for {
 		client, closeConn, err := t.client()
 		if err != nil {
@@ -129,15 +137,11 @@ func (t *relaySide) retry(ctx context.Context, attempt func(context.Context, rel
 			return err
 		}
 		if progressed {
-			backoff = t.cfg.MinBackoff
+			backoff.reset()
 		}
-		wait := backoff/2 + mrand.N(backoff/2+1) //nolint:gosec // jitter, not a secret
-		select {
-		case <-ctx.Done():
+		if !backoff.wait(ctx) {
 			return fmt.Errorf("%w (last error: %w)", ctx.Err(), err)
-		case <-time.After(wait):
 		}
-		backoff = min(2*backoff, t.cfg.MaxBackoff)
 	}
 }
 
@@ -250,17 +254,6 @@ func (t *relaySide) send(ctx context.Context, client relayv1.RelayServiceClient,
 	return sent > start.StartOffset, <-acked
 }
 
-// streamEnd returns the real reason a first send failed. A failed send
-// reports only io.EOF, and the status comes from the next receive.
-func streamEnd[T any](recv func() (T, error), err error) error {
-	if errors.Is(err, io.EOF) {
-		if _, rerr := recv(); rerr != nil {
-			return rerr
-		}
-	}
-	return err
-}
-
 // ReceiveFile receives a sealed file of size bytes through the relay named in
 // the ticket into path, which must be in the agent's private spool. The size
 // comes from the signed manifest, so the relay can't make the agent take more.
@@ -292,7 +285,7 @@ func (t *relaySide) receive(ctx context.Context, client relayv1.RelayServiceClie
 	if offset > size {
 		return false, ErrSpoolTooLong
 	}
-	start := offset
+	start, synced := offset, offset
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := client.Receive(ctx)
@@ -326,10 +319,16 @@ func (t *relaySide) receive(ctx context.Context, client relayv1.RelayServiceClie
 		if _, err := f.WriteAt(chunk, int64(offset)); err != nil { //nolint:gosec // offset is the file size
 			return offset > start, err
 		}
-		if err := f.Sync(); err != nil {
+		offset += uint64(len(chunk))
+		// Acknowledge only synced bytes, but sync in batches, and always at
+		// the end of the file, which the relay waits for.
+		if offset-synced < syncEvery && offset != size {
+			continue
+		}
+		if err := syncFile(f); err != nil {
 			return offset > start, err
 		}
-		offset += uint64(len(chunk))
+		synced = offset
 		ack := &relayv1.ReceiveRequest{Message: &relayv1.ReceiveRequest_WrittenBytes{WrittenBytes: offset}}
 		if err := stream.Send(ack); err != nil && !errors.Is(err, io.EOF) {
 			return true, err

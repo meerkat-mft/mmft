@@ -17,7 +17,6 @@ import (
 // half is one side of a delivery.
 type half struct {
 	agent, peer string
-	role        relayticket.Role
 }
 
 // pairing joins the two sides of one delivery. Data moves from the sender's
@@ -55,13 +54,6 @@ func newPairing(s *Server, delivery string) *pairing {
 	}
 }
 
-func (p *pairing) has(role relayticket.Role) bool {
-	if role == relayticket.Send {
-		return p.sender != nil
-	}
-	return p.receiver != nil
-}
-
 func (p *pairing) side(role relayticket.Role) *half {
 	if role == relayticket.Send {
 		return p.sender
@@ -77,6 +69,17 @@ func (p *pairing) only() *half {
 }
 
 func (p *pairing) isPaired() bool { return p.sender != nil && p.receiver != nil }
+
+// ended reports whether the pairing has finished, even if its sides haven't
+// left yet.
+func (p *pairing) ended() bool {
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
 
 // end finishes the pairing: successfully with a nil error, or with err. Only
 // the first call counts.
@@ -135,21 +138,36 @@ func (p *pairing) touch() {
 }
 
 // join adds one side of a delivery, pairing it with the other side if that is
-// already waiting.
+// already waiting. It changes nothing unless it accepts the side.
 func (s *Server) join(t relayticket.Ticket, total, offset uint64) (*pairing, *half, error) {
-	h := &half{agent: t.Holder, peer: t.Peer, role: t.Role}
+	h := &half{agent: t.Holder, peer: t.Peer}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.pairings[t.DeliveryID]
+	if p != nil && p.ended() {
+		// Its sides are leaving. A new side starts afresh rather than joining
+		// a pairing that can no longer forward anything.
+		delete(s.pairings, t.DeliveryID)
+		p = nil
+	}
 	var stale *half
-	if p != nil && p.has(t.Role) {
+	if p != nil {
 		stale = p.side(t.Role)
+	}
+	if stale != nil && (stale.agent != h.agent || stale.peer != h.peer) {
 		// Only the same agent, for the same pair, may replace a side.
-		if stale.agent != h.agent || stale.peer != h.peer {
-			return nil, nil, status.Error(codes.PermissionDenied, "another agent holds this side of the delivery")
+		return nil, nil, status.Error(codes.PermissionDenied, "another agent holds this side of the delivery")
+	}
+	if stale == nil && p != nil {
+		other := p.only()
+		if other.agent != h.peer || other.peer != h.agent {
+			return nil, nil, status.Error(codes.PermissionDenied, "the tickets name different agents")
 		}
 	}
-	// A reconnecting agent's stale stream is about to end, so it doesn't count.
+
+	// Check every limit before ending a stale stream, so a refused side
+	// leaves the running pair alone. A replaced pairing doesn't count, and a
+	// reconnecting agent's stale stream doesn't count against it.
 	open := s.perAgent[h.agent]
 	if stale != nil {
 		open--
@@ -157,35 +175,33 @@ func (s *Server) join(t relayticket.Ticket, total, offset uint64) (*pairing, *ha
 	if open >= s.cfg.Limits.MaxPerAgent {
 		return nil, nil, status.Error(codes.ResourceExhausted, "the agent has too many relay streams open")
 	}
+	waiting, pairs := 0, 0
+	for _, q := range s.pairings {
+		switch {
+		case q.ended() || (stale != nil && q == p):
+		case q.isPaired():
+			pairs++
+		default:
+			waiting++
+		}
+	}
+	joining := p != nil && stale == nil
+	if joining && pairs >= s.cfg.Limits.MaxPairs {
+		return nil, nil, status.Error(codes.ResourceExhausted, "the relay has too many pairs forwarding")
+	}
+	if !joining && waiting >= s.cfg.Limits.MaxWaiting {
+		return nil, nil, status.Error(codes.ResourceExhausted, "the relay has too many streams waiting")
+	}
+
 	if stale != nil {
 		// The agent is reconnecting, so the old stream is stale. The other side
 		// reconnects too, and the delivery resumes.
 		p.end(status.Error(codes.Aborted, "a newer connection replaced this one"))
-		delete(s.pairings, t.DeliveryID)
 		p = nil
 	}
-	waiting, pairs := 0, 0
-	for _, q := range s.pairings {
-		if q.isPaired() {
-			pairs++
-		} else {
-			waiting++
-		}
-	}
 	if p == nil {
-		if waiting >= s.cfg.Limits.MaxWaiting {
-			return nil, nil, status.Error(codes.ResourceExhausted, "the relay has too many streams waiting")
-		}
 		p = newPairing(s, t.DeliveryID)
 		s.pairings[t.DeliveryID] = p
-	} else {
-		other := p.only()
-		if other.agent != h.peer || other.peer != h.agent {
-			return nil, nil, status.Error(codes.PermissionDenied, "the tickets name different agents")
-		}
-		if pairs >= s.cfg.Limits.MaxPairs {
-			return nil, nil, status.Error(codes.ResourceExhausted, "the relay has too many pairs forwarding")
-		}
 	}
 	if t.Role == relayticket.Send {
 		p.sender, p.total = h, total

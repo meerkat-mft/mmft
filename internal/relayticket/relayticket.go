@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	relayv1 "mmft.dev/mmft/gen/relay/v1"
+	"mmft.dev/mmft/internal/newfile"
 )
 
 const (
@@ -30,6 +31,9 @@ const (
 
 	version  = 1
 	maxBytes = 1024
+	// clockSkew allows for the orchestrator's clock running ahead of the
+	// relay's when checking how far ahead a ticket expires.
+	clockSkew = 5 * time.Minute
 	// signingContext separates ticket signatures from anything else the key
 	// could ever sign.
 	signingContext = "mmft relay ticket v1\x00"
@@ -135,6 +139,11 @@ func Verify(pub ed25519.PublicKey, data []byte, now time.Time) (Ticket, error) {
 	if !now.Before(t.ExpiresAt) {
 		return Ticket{}, ErrExpired
 	}
+	// The relay holds ADR 0020's lifetime itself, so a ticket issued for
+	// longer by mistake can't widen the window a revoked agent has.
+	if t.ExpiresAt.After(now.Add(Lifetime + clockSkew)) {
+		return Ticket{}, fmt.Errorf("%w: it expires too far ahead", ErrInvalid)
+	}
 	return t, nil
 }
 
@@ -143,12 +152,17 @@ func signed(payload []byte) []byte {
 }
 
 // LoadOrCreateKey reads the ticket key from dir, creating it first if it
-// doesn't exist.
+// doesn't exist. When two calls race to create it, both get the one created.
 func LoadOrCreateKey(dir string) (ed25519.PrivateKey, error) {
 	path := filepath.Join(filepath.Clean(dir), KeyFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return createKey(path)
+		key, createErr := createKey(path)
+		if !errors.Is(createErr, fs.ErrExist) {
+			return key, createErr
+		}
+		// Another call created it first.
+		data, err = os.ReadFile(path)
 	}
 	if err != nil {
 		return nil, err
@@ -177,21 +191,10 @@ func createKey(path string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := newfile.Write(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
 		return nil, err
 	}
-	if err := pem.Encode(f, &pem.Block{Type: "PRIVATE KEY", Bytes: der}); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return nil, err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return nil, err
-	}
-	return key, f.Close()
+	return key, nil
 }
 
 // PublicKey returns the hex public key that the relay is configured with.
