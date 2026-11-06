@@ -349,6 +349,9 @@ func (p *pairing) pump(stream relayv1.RelayService_SendServer) error {
 		if uint64(len(chunk)) > remaining {
 			return status.Error(codes.InvalidArgument, "the sender sent more than its total")
 		}
+		if tap := p.s.cfg.Tap; tap != nil {
+			tap(p.delivery, p.total-remaining, chunk)
+		}
 		remaining -= uint64(len(chunk))
 		select {
 		case p.data <- chunk:

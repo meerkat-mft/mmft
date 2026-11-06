@@ -61,6 +61,12 @@ type harness struct {
 
 func start(t *testing.T) harness {
 	t.Helper()
+	return startWith(t, func(*Config) {})
+}
+
+// startWith starts a server with its configuration changed by edit.
+func startWith(t *testing.T, edit func(*Config)) harness {
+	t.Helper()
 	ca, err := connca.Create(filepath.Join(t.TempDir(), "ca"), time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +74,9 @@ func start(t *testing.T) harness {
 	sum := sha256.Sum256([]byte(adminToken))
 	pool := dbtest.Pool(t)
 	c := &clock{t: time.Now()}
-	s, err := New(Config{Authority: ca, DB: pool, Names: []string{"orchestrator.test"}, AdminTokenSHA256: hex.EncodeToString(sum[:]), Now: c.now})
+	cfg := Config{Authority: ca, DB: pool, Names: []string{"orchestrator.test"}, AdminTokenSHA256: hex.EncodeToString(sum[:]), Now: c.now}
+	edit(&cfg)
+	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

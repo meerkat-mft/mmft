@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 )
 
-// syncDir makes the new name durable.
-func syncDir(dir string) error {
+// SyncDir makes the new name durable.
+func SyncDir(dir string) error {
 	d, err := os.Open(filepath.Clean(dir))
 	if err != nil {
 		return err

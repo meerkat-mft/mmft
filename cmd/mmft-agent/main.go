@@ -51,7 +51,7 @@ const usage = `usage:
                      --ca-fingerprint HEX --root-fingerprint HEX [--dir DIR]
   mmft-agent fingerprint [--dir DIR] [--json]
   mmft-agent identity [--dir DIR]
-  mmft-agent run [--dir DIR]
+  mmft-agent run [--dir DIR] [--outbox DIR --inbox DIR --spool DIR]
 
 exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused, 5 waiting for approval
 `
@@ -257,10 +257,13 @@ func identity(args []string, stdout, stderr io.Writer, now func() time.Time) err
 func runAgent(args []string, stdout, stderr io.Writer, now func() time.Time) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	dir := fs.String("dir", defaultDir, "directory for the agent's keys and state")
+	outbox := fs.String("outbox", "", "the only directory manual deliveries may read from")
+	inbox := fs.String("inbox", "", "the only directory manual deliveries may write to")
+	spool := fs.String("spool", "", "private directory for sealed files in flight, needed with --outbox or --inbox")
 	if err := parse(fs, args, stderr); err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return agent.Run(ctx, *dir, agent.RunConfig{Log: stdout, Now: now})
+	return agent.Run(ctx, *dir, agent.RunConfig{Log: stdout, Now: now, Outbox: *outbox, Inbox: *inbox, Spool: *spool})
 }

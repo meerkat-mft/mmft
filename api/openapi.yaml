@@ -272,6 +272,47 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
+  /runs:
+    post:
+      operationId: startManualRun
+      summary: Start a manual run
+      description: >-
+        Moves one file from the source agent's outbox to the destination agent's inbox, without a flow. Both agents
+        must be approved and connected. The file name is a bare name, never a path. Manual runs are for M1, before
+        flows exist. See ADR 0021.
+      tags: [Runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_agent_id, destination_agent_id, file_name]
+              properties:
+                source_agent_id:
+                  $ref: '#/components/schemas/Id'
+                destination_agent_id:
+                  $ref: '#/components/schemas/Id'
+                file_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  description: A bare file name, with no path separators, NUL, or control characters, and not `.` or `..`.
+      responses:
+        '202':
+          description: The run was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
   /runs/{run_id}:
     parameters:
       - $ref: '#/components/parameters/RunId'
@@ -286,6 +327,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/Problem'
         '404':
           $ref: '#/components/responses/Problem'
   /audit/checkpoints:
@@ -514,9 +557,13 @@ components:
         id:
           $ref: '#/components/schemas/Id'
         flow_id:
-          $ref: '#/components/schemas/Id'
+          description: Null for a manual run.
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
         flow_version:
-          type: integer
+          description: Null for a manual run.
+          type: [integer, 'null']
         status:
           type: string
           enum: [pending, running, succeeded, partial_failure, failed, cancelled]
@@ -529,6 +576,10 @@ components:
       required: [id, status, evidence]
       properties:
         id:
+          $ref: '#/components/schemas/Id'
+        source_agent_id:
+          $ref: '#/components/schemas/Id'
+        destination_agent_id:
           $ref: '#/components/schemas/Id'
         file_name:
           type: string

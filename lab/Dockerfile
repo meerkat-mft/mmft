@@ -5,7 +5,8 @@ COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY gen ./gen
 COPY internal ./internal
-RUN CGO_ENABLED=0 go build -o /out/ ./cmd/...
+COPY lab/mmft-testrelay ./lab/mmft-testrelay
+RUN CGO_ENABLED=0 go build -o /out/ ./cmd/... ./lab/mmft-testrelay
 
 FROM alpine:3.22
 RUN apk add --no-cache iproute2 && adduser -D -H -u 10001 mmft && install -d -o mmft /var/lib/mmft/spool \

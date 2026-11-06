@@ -15,8 +15,11 @@ x-service: &service
 x-agent: &agent
   <<: *service
   tmpfs:
-    # A small spool, so that full-disk tests are quick.
+    # A small spool, so that full-disk tests are quick, and the outbox and
+    # inbox that manual deliveries use.
     - /var/lib/mmft/spool:size=16m,uid=10001,mode=0700
+    - /var/lib/mmft/outbox:size=16m,uid=10001,mode=0700
+    - /var/lib/mmft/inbox:size=16m,uid=10001,mode=0700
 
 services:
   orchestrator:

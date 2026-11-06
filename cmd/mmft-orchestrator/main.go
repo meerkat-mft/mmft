@@ -1,11 +1,15 @@
 // Command mmft-orchestrator runs the orchestrator. Settings come from the
 // environment: MMFT_DATABASE_URL, MMFT_CA_DIR, MMFT_SERVER_NAMES (comma separated),
-// MMFT_ADMIN_TOKEN_SHA256, MMFT_GRPC_LISTEN, MMFT_API_LISTEN, and
-// MMFT_CONNECTION_LIFETIME, a Go duration that only the lab sets short.
+// MMFT_ADMIN_TOKEN_SHA256, MMFT_GRPC_LISTEN, MMFT_API_LISTEN,
+// MMFT_CONNECTION_LIFETIME, a Go duration that only the lab sets short, and for
+// manual runs MMFT_RELAY_ADDRESS and MMFT_RELAY_CERTIFICATE_SHA256, the hex hash
+// that `mmft-relay init` prints.
 package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -145,6 +149,24 @@ func connectionLifetime(v string) (time.Duration, error) {
 	return d, nil
 }
 
+// relaySettingsFromEnv adds the relay settings for manual runs. With no address
+// it adds nothing, and manual runs are refused.
+func relaySettingsFromEnv(cfg *server.Config, caDir, address, fingerprint string) error {
+	if address == "" {
+		return nil
+	}
+	fp, err := hex.DecodeString(fingerprint)
+	if err != nil || len(fp) != sha256.Size {
+		return errors.New("MMFT_RELAY_CERTIFICATE_SHA256 must be the 64 hex character hash that `mmft-relay init` prints")
+	}
+	key, err := relayticket.LoadOrCreateKey(caDir)
+	if err != nil {
+		return err
+	}
+	cfg.RelayAddress, cfg.RelayCertificateSHA256, cfg.TicketKey = address, fp, key
+	return nil
+}
+
 func serve() error {
 	ca, err := connca.Load(os.Getenv("MMFT_CA_DIR"))
 	if err != nil {
@@ -165,13 +187,17 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	srv, err := server.New(server.Config{
+	cfg := server.Config{
 		Authority:          ca,
 		DB:                 pool,
 		Names:              strings.Split(os.Getenv("MMFT_SERVER_NAMES"), ","),
 		AdminTokenSHA256:   os.Getenv("MMFT_ADMIN_TOKEN_SHA256"),
 		ConnectionLifetime: lifetime,
-	})
+	}
+	if err := relaySettingsFromEnv(&cfg, os.Getenv("MMFT_CA_DIR"), os.Getenv("MMFT_RELAY_ADDRESS"), os.Getenv("MMFT_RELAY_CERTIFICATE_SHA256")); err != nil {
+		return err
+	}
+	srv, err := server.New(cfg)
 	if err != nil {
 		return err
 	}

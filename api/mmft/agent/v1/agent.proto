@@ -90,6 +90,7 @@ message ConnectResponse {
     Revocation revocation = 6;
     Cancel cancel = 7;
     RelayTicket relay_ticket = 8;
+    ManualDelivery manual_delivery = 9;
   }
 }
 
@@ -166,6 +167,30 @@ message DeliveryUpdate {
   bytes manifest_statement = 6;
   // Signed delivery receipt from the destination agent.
   bytes receipt_statement = 7;
+}
+
+// ManualDelivery gives an agent its side of one delivery in a manual run. The
+// agent reads only from its own outbox and writes only to its own inbox, which
+// are set on its host. See ADR 0021.
+message ManualDelivery {
+  string delivery_id = 1;
+  DeliveryRole role = 2;
+  // A bare file name, never a path. The source reads it from its outbox, and
+  // the destination creates it in its inbox.
+  string file_name = 3;
+  string peer_agent_id = 4;
+  // The other agent's identity statement. The agent verifies it to its pinned
+  // root, so the orchestrator can't substitute another agent's keys.
+  bytes peer_identity_statement = 5;
+  RelayTicket relay_ticket = 6;
+  // The source's signed delivery manifest. Sent to the destination only.
+  bytes manifest_statement = 7;
+}
+
+enum DeliveryRole {
+  DELIVERY_ROLE_UNSPECIFIED = 0;
+  DELIVERY_ROLE_SEND = 1;
+  DELIVERY_ROLE_RECEIVE = 2;
 }
 
 // RelayTicket lets an agent connect to the relay for one delivery.

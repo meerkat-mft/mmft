@@ -105,6 +105,10 @@ type Config struct {
 	// Log receives one JSON object per line when a pair ends.
 	Log io.Writer
 	Now func() time.Time
+	// Tap, if set, sees each data message as it is forwarded, with its offset
+	// in the sealed file. Only the lab's test relay sets it, to check that
+	// the relay sees nothing but sealed bytes. It must not keep chunk.
+	Tap func(deliveryID string, offset uint64, chunk []byte)
 }
 
 // Server is a relay.

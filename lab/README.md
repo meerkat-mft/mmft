@@ -5,7 +5,9 @@ A local test lab in Docker containers, which runs on one laptop. Each script sta
 - `lab/smoke.sh` checks the networks, filesystems, and restarts that later failure tests rely on.
 - `lab/enroll.sh` enrolls both agents unattended, as a deployment tool would: `mmft agent token`, `mmft-agent install`, `mmft-agent fingerprint --json`, `mmft agent approve --fingerprints`, and `mmft-agent identity`. It then checks that a used token, an expired token, and a changed fingerprint are refused. The fingerprints pass from the agents to the admin machine through the script, never through the orchestrator.
 - `lab/connect.sh` enrolls both agents, checks that both reach the relay, and runs `mmft-agent run` on each. It checks that both stay connected, that they reconnect after `agent-a` and then the orchestrator restart, and that they renew their connection certificates before they expire (C1). The orchestrator issues 2-minute certificates for this, so the script takes about four minutes.
+- `lab/deliver.sh` enrolls both agents, runs them with an outbox and inbox, and moves a file from `agent-a` to `agent-b` with `mmft delivery send`, through the test relay. It checks that the file arrives unchanged with both signed statements, that the relay forwarded exactly the sealed file and no plaintext, that the orchestrator holds none of the file and stores its name only in `delivery_files`, and that both spools are empty.
 - `lab/lib.sh` holds the setup the scripts share.
+- `lab/mmft-testrelay` is the lab's test relay: the real relay, plus a copy of every forwarded byte for checks. It is built only into the lab image.
 
 | Service | Networks | Purpose |
 | --- | --- | --- |

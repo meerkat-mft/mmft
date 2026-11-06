@@ -42,6 +42,8 @@ const usage = `usage:
   mmft agent approve --api HOST:PORT --ca-fingerprint HEX --token-file FILE
                      --admin-dir DIR --passphrase-file FILE --certificate FILE
                      --root-public FILE --root-fingerprint HEX --fingerprints FILE [--days N]
+  mmft delivery send --api HOST:PORT --ca-fingerprint HEX --token-file FILE --workspace NAME
+                     --from NAME --to NAME --file NAME [--wait] [--timeout DURATION]
 
 exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused
 `
@@ -99,6 +101,8 @@ func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		return agentToken(rest, stdout, stderr, now)
 	case "agent approve":
 		return agentApprove(rest, stdout, stderr, now)
+	case "delivery send":
+		return deliverySend(rest, stdout, stderr, now)
 	default:
 		return errUsage
 	}

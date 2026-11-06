@@ -11,6 +11,7 @@ import (
 
 	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/relayticket"
+	"mmft.dev/mmft/internal/server"
 )
 
 func TestRun(t *testing.T) {
@@ -107,5 +108,29 @@ func TestCASettingsForTheRelay(t *testing.T) {
 	}
 	if settings.TicketKey != relayticket.PublicKey(key) || settings.TicketKey == initOut.TicketKey {
 		t.Fatal("relay-settings did not print the new ticket key")
+	}
+}
+
+func TestRelaySettingsFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	var cfg server.Config
+	if err := relaySettingsFromEnv(&cfg, dir, "", ""); err != nil || cfg.RelayAddress != "" {
+		t.Fatalf("no address: %v, %+v", err, cfg)
+	}
+	for _, fp := range []string{"", "abcd", strings.Repeat("zz", 32)} {
+		if err := relaySettingsFromEnv(&cfg, dir, "relay:7445", fp); err == nil {
+			t.Errorf("fingerprint %q accepted", fp)
+		}
+	}
+	fp := strings.Repeat("ab", 32)
+	if err := relaySettingsFromEnv(&cfg, dir, "relay:7445", fp); err != nil {
+		t.Fatal(err)
+	}
+	key, err := relayticket.LoadOrCreateKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RelayAddress != "relay:7445" || len(cfg.RelayCertificateSHA256) != 32 || !cfg.TicketKey.Equal(key) {
+		t.Fatalf("settings %+v", cfg)
 	}
 }
