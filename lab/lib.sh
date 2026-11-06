@@ -114,6 +114,44 @@ approve() {
     --root-public "$admin/root/root.pub.json" --root-fingerprint "$root_fp" --fingerprints "$admin/fingerprints.json"
 }
 
+# enroll_both enrolls and approves agent-a and agent-b, collecting their
+# fingerprints in the directory WORK.
+enroll_both() {
+  echo "Enrolling and approving both agents..."
+  for host in agent-a agent-b; do
+    token "$host" | field token | put "$host" "$spool/token"
+    install "$host" "$host" "$state" >/dev/null
+    in_lab "$host" mmft-agent fingerprint --dir "$state" --json >>"$1/fingerprints.json"
+  done
+  approve "$1/fingerprints.json" >/dev/null
+}
+
+# run_with_boxes runs both agents with an outbox, an inbox, and a spool for
+# sealed files, logging to $spool/run.log.
+run_with_boxes() {
+  echo "Starting both agents with an outbox and inbox..."
+  for host in agent-a agent-b; do
+    in_lab "$host" mkdir -p "$spool/sealed"
+    docker compose exec -d -T "$host" sh -c \
+      "exec mmft-agent run --dir $state --outbox $outbox --inbox $inbox --spool $spool/sealed >>$spool/run.log 2>&1"
+  done
+}
+
+# send_file NAME OUT sends NAME from agent-a to agent-b with `mmft delivery
+# send --wait`, writing the run's JSON to OUT. It retries while the agents
+# are still connecting, which the API refuses with 409, and returns the
+# command's exit code.
+send_file() {
+  for _ in $(seq 1 30); do
+    code=0
+    in_lab admin mmft delivery send --api orchestrator:7444 --ca-fingerprint "$ca_fp" --token-file "$admin/api-token" \
+      --workspace lab --from agent-a --to agent-b --file "$1" --wait --timeout 2m >"$2" 2>"$2.err" || code=$?
+    grep -q 409 "$2.err" || return "$code"
+    sleep 1
+  done
+  return "$code"
+}
+
 # finish reports the result and exits.
 finish() {
   if [ "$fails" -ne 0 ]; then
