@@ -1,0 +1,191 @@
+/* Ledger: quiet and exact, built around evidence. The logo's navy, a fine
+   serif for headings, generous space, and evidence drawn as two seals that
+   fill as each agent signs. Amber marks the brand and the one primary action;
+   warnings are violet, failures red. */
+:root {
+  --bg: #0d1520;
+  --surface: #121d2c;
+  --raise: #172436;
+  --line: #22324a;
+  --text: #e8eef7;
+  --muted: #8494ad;
+  --brand: #e2a04a;
+  --ok: #6fd3a4;
+  --warn: #a990ff;
+  --fail: #ff6b6b;
+  --font-display: "Instrument Serif", serif;
+  --font-body: "Geist", sans-serif;
+  --font-mono: "Geist Mono", monospace;
+  --radius: 10px;
+}
+body {
+  background: linear-gradient(180deg, #14202e 0, var(--bg) 420px);
+}
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+.screens a {
+  border-bottom: 2px solid transparent;
+}
+.screens a.current {
+  border-bottom-color: var(--brand);
+}
+.directions a.current {
+  color: var(--brand);
+}
+.screen {
+  gap: 36px;
+}
+.screen-head h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.2rem, 4.5vw, 3.6rem);
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.7rem;
+  margin-bottom: 12px;
+}
+
+/* Evidence is the star: two seals, larger, with the label beside them. */
+.mark {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  transform: none;
+  border-width: 2px;
+}
+.evidence[data-evidence="source_only"] {
+  color: var(--text);
+}
+.evidence[data-evidence="source_only"] .mark:not(.on) {
+  border-style: dashed;
+  color: var(--muted);
+}
+.status[data-status="retry_wait"],
+.status[data-status="partial_failure"] {
+  color: var(--warn);
+}
+
+/* Canvas: a calm tree with thin connectors. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+}
+.card[data-kind="destination"] .card-agent::before {
+  content: "→ ";
+  color: var(--muted);
+}
+.paths {
+  border-left: 1px solid var(--line);
+  padding-left: 32px;
+}
+.rule-n {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+.rule-label {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+}
+.draft-banner {
+  border: 1px solid rgba(226, 160, 74, 0.4);
+  background: rgba(226, 160, 74, 0.06);
+}
+.draft-banner code {
+  color: var(--brand);
+}
+
+/* Run: a ledger of deliveries under a single sentence. */
+.summary {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.big .num {
+  font-family: var(--font-display);
+  font-size: 4.4rem;
+  line-height: 1;
+}
+.big .of {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  color: var(--muted);
+}
+.ratio {
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.deliveries td {
+  border-top-color: rgba(34, 50, 74, 0.6);
+  padding: 12px 10px;
+}
+.deliveries tbody tr:hover {
+  background: var(--raise);
+}
+.c-err code {
+  color: var(--fail);
+}
+.deliveries tr[data-status="retry_wait"] .c-err code {
+  color: var(--warn);
+}
+
+/* Audit: a vertical rail, with signatures as seals on it. */
+.facts {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  background: var(--surface);
+}
+.timeline {
+  position: relative;
+  padding-left: 28px;
+}
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line);
+}
+.timeline li {
+  position: relative;
+  border-top: 0;
+  padding: 12px 0;
+}
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -25px;
+  top: 17px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.timeline li[data-kind="signed"]::before {
+  width: 15px;
+  height: 15px;
+  left: -28px;
+  top: 14px;
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(111, 211, 164, 0.15);
+}
+.timeline li[data-kind="warn"]::before {
+  background: var(--warn);
+}
+.timeline li[data-kind="warn"] .what {
+  color: var(--warn);
+}
+.timeline li[data-kind="ok"] .what {
+  color: var(--ok);
+}
+.stmt-kind {
+  color: var(--ok);
+}

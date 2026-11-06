@@ -1,0 +1,204 @@
+/* Sentinel: a dense control room. Near black, a faint grid, condensed
+   uppercase labels, monospace data, and square corners. Amber lives only in
+   the mark and focus ring; warnings are yellow and hatched, so a warning
+   never reads as the brand even though the hues are near. */
+:root {
+  --bg: #07090c;
+  --surface: #0d1117;
+  --raise: #121821;
+  --line: #1d2733;
+  --text: #d6dde6;
+  --muted: #6c7a8b;
+  --brand: #e2a04a;
+  --ok: #3ddc97;
+  --warn: #f5d547;
+  --fail: #ff4d5e;
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-body: "Martian Mono", monospace;
+  --font-mono: "Martian Mono", monospace;
+  --radius: 2px;
+}
+body {
+  font-size: 13px;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.wordmark,
+h1,
+h2,
+.screens a,
+.directions a,
+th,
+.card-kind,
+.api h3 {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.wordmark {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.top {
+  border-bottom-color: var(--brand);
+}
+.screens a.current,
+.directions a.current {
+  color: var(--bg);
+  background: var(--text);
+}
+.screen-head h1 {
+  font-weight: 700;
+  font-size: 2rem;
+}
+h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+/* Every status is a square chip. Warnings are hatched, failures solid. */
+.status {
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.status[data-status="retry_wait"],
+.status[data-status="partial_failure"] {
+  background: repeating-linear-gradient(-45deg, rgba(245, 213, 71, 0.22) 0 4px, transparent 4px 8px);
+}
+.status[data-status="failed"] {
+  background: var(--fail);
+  color: var(--bg);
+  border-color: var(--fail);
+}
+.seg[data-status="retry_wait"] {
+  background: repeating-linear-gradient(-45deg, var(--warn) 0 3px, transparent 3px 6px);
+}
+.mark {
+  border-radius: 0;
+  transform: none;
+  width: 8px;
+  height: 8px;
+}
+
+/* Canvas: cards with corner brackets on a grid. */
+.tree {
+  gap: 24px;
+}
+.card {
+  position: relative;
+  background: var(--surface);
+  border-color: var(--line);
+}
+.card::before,
+.card::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--muted);
+}
+.card::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.card::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+.card[data-kind="on-failure"] {
+  border-style: dashed;
+  border-color: var(--warn);
+}
+.draft-banner {
+  border-left: 3px solid var(--text);
+  background: var(--raise);
+}
+.rule-n {
+  color: var(--bg);
+  background: var(--muted);
+  padding: 0 6px;
+}
+
+/* Run: a status board, numbers first. */
+.summary {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 24px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 16px;
+}
+.big {
+  grid-row: span 2;
+}
+.big .num {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 3.6rem;
+  color: var(--fail);
+  line-height: 1;
+}
+.big .of {
+  display: block;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+.ratio {
+  height: 18px;
+}
+.deliveries td {
+  padding: 6px 8px;
+}
+.deliveries tr[data-status="failed"] td:first-child {
+  box-shadow: inset 3px 0 var(--fail);
+}
+.deliveries tr[data-status="retry_wait"] td:first-child {
+  box-shadow: inset 3px 0 var(--warn);
+}
+.attention,
+.all {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px;
+}
+
+/* Audit: a log, aligned in columns. */
+.timeline {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.timeline li {
+  padding: 6px 12px;
+  grid-template-columns: 130px 150px 1fr auto;
+}
+.timeline li[data-kind="warn"] {
+  background: repeating-linear-gradient(-45deg, rgba(245, 213, 71, 0.07) 0 6px, transparent 6px 12px);
+}
+.timeline li[data-kind="signed"] .stmt-kind {
+  color: var(--bg);
+  background: var(--ok);
+  padding: 0 6px;
+}
+.timeline li[data-kind="ok"] .what {
+  color: var(--ok);
+}
+.facts {
+  border: 1px solid var(--line);
+  padding: 16px;
+  background: var(--surface);
+}

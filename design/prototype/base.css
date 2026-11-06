@@ -1,0 +1,456 @@
+/* Structure shared by every direction. Each direction's stylesheet sets the
+   tokens below and its own layout. Dark only: there is no light theme. */
+:root {
+  color-scheme: dark;
+  --bg: #0b1119;
+  --surface: #121a25;
+  --line: #233042;
+  --text: #e8edf3;
+  --muted: #8f9cad;
+  --brand: #e2a04a;
+  --ok: #4fb38a;
+  --warn: #ff7a59;
+  --fail: #f0525e;
+  --font-display: serif;
+  --font-body: sans-serif;
+  --font-mono: monospace;
+  --radius: 8px;
+  --gap: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+code,
+.code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+
+/* Header */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.brand img {
+  border-radius: 6px;
+}
+.ws {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.screens,
+.directions {
+  display: flex;
+  gap: 4px;
+}
+.directions {
+  margin-left: auto;
+}
+.screens a,
+.directions a {
+  text-decoration: none;
+  padding: 6px 12px;
+  color: var(--muted);
+}
+.screens a.current,
+.directions a.current {
+  color: var(--text);
+}
+.direction-line {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 12px 0 0;
+}
+
+/* Status and evidence never rely on colour alone: each has a glyph or marks
+   and a label. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.status[data-status="succeeded"],
+.status[data-status="approved"] {
+  color: var(--ok);
+}
+.status[data-status="failed"] {
+  color: var(--fail);
+}
+.status[data-status="retry_wait"],
+.status[data-status="partial_failure"] {
+  color: var(--warn);
+}
+.evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.marks {
+  display: inline-flex;
+  gap: 3px;
+}
+.mark {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.mark.on {
+  background: currentColor;
+}
+.evidence[data-evidence="verified"] {
+  color: var(--ok);
+}
+
+.filename {
+  overflow-wrap: anywhere;
+}
+.gone,
+.untrusted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Screens */
+.screen {
+  padding-top: 28px;
+  display: grid;
+  gap: 28px;
+}
+/* Grid children keep their content's width unless told otherwise, so one
+   long table would push the whole page wider than the window. */
+.screen > *,
+.tree > *,
+.paths > *,
+.path > * {
+  min-width: 0;
+}
+.screen-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+/* API panel: every screen says which calls it needs. */
+.api {
+  border-top: 1px dashed var(--line);
+  padding-top: 16px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.api h3 {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.api ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.api li {
+  display: flex;
+  gap: 12px;
+}
+.api-state {
+  font-size: 0.75rem;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.api li[data-state="missing"] .api-state {
+  border-color: var(--fail);
+  color: var(--fail);
+}
+.api li[data-state="built"] .api-state {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+/* Flow canvas */
+.draft-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.draft-banner code {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+.tree {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 40px;
+  align-items: start;
+}
+.spine {
+  display: grid;
+  gap: 16px;
+}
+.paths {
+  display: grid;
+  gap: 24px;
+}
+.path {
+  display: grid;
+  gap: 12px;
+}
+.branch {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.rule {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: grid;
+  gap: 4px;
+}
+.card-kind {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card-agent {
+  font-weight: 600;
+}
+.card-detail {
+  color: var(--muted);
+}
+.delivers {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.unmatched {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Run */
+.summary {
+  display: grid;
+  gap: 12px;
+}
+.ratio {
+  display: flex;
+  height: 10px;
+  gap: 2px;
+}
+.seg[data-status="succeeded"] {
+  background: var(--ok);
+}
+.seg[data-status="retry_wait"] {
+  background: var(--warn);
+}
+.seg[data-status="failed"] {
+  background: var(--fail);
+}
+.legend {
+  display: flex;
+  gap: 20px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.deliveries th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 8px;
+}
+.deliveries td {
+  padding: 10px 8px;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+.retry {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.c-size {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.c-file {
+  min-width: 14ch;
+}
+
+/* Audit */
+.facts dl {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px 20px;
+  margin: 0;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.facts dd code {
+  overflow-wrap: anywhere;
+}
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.timeline li {
+  display: grid;
+  grid-template-columns: 120px 160px 1fr auto;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  align-items: baseline;
+}
+.timeline time {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.actor {
+  font-weight: 600;
+}
+.stmt {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.stmt-kind {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Narrow screens: each delivery becomes a small stacked block instead of a
+   table row, so nothing is squeezed to one letter per line. */
+@media (max-width: 900px) {
+  .deliveries thead {
+    display: none;
+  }
+  .deliveries,
+  .deliveries tbody {
+    display: block;
+  }
+  .deliveries tr {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+  }
+  .deliveries td {
+    border-top: 0;
+    padding: 0;
+  }
+  .deliveries .c-status {
+    grid-row: span 3;
+  }
+  .deliveries .c-route,
+  .deliveries .c-size {
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+  .deliveries .c-ev,
+  .deliveries .c-err {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .tree {
+    grid-template-columns: 1fr;
+  }
+  .timeline li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .facts dl {
+    grid-template-columns: 1fr;
+  }
+  .directions {
+    margin-left: 0;
+  }
+  .all .c-route,
+  .all .c-size {
+    display: none;
+  }
+}
