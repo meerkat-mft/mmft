@@ -120,15 +120,6 @@
       h("a", { class: "nav-item", href: "#" + key, "aria-current": route.section === key ? "page" : null }, icon(ic), h("span", {}, label))));
   }
 
-  function renderCrumbs(trail) {
-    const parts = [];
-    trail.forEach(([label, href], i) => {
-      if (i) parts.push(h("span", { class: "sep", "aria-hidden": "true" }, "/"));
-      parts.push(i === trail.length - 1 ? h("span", { "aria-current": "page" }, label) : h("a", { href }, label));
-    });
-    $("crumbs").replaceChildren(...parts);
-  }
-
   // ---- Runs --------------------------------------------------------------
   let filter = "all";
   function runsList(current) {
@@ -420,36 +411,26 @@
   function render() {
     const r = parse();
     renderNav(r);
-    const ws = [M.workspace, "#runs"];
     let view;
     let panelFor = null;
     if (r.section === "runs") {
       const run = runById(r.id) || M.runs[0];
       const tab = r.tab || "deliveries";
-      const flow = flowById(run.flow);
       view = h("div", { class: "master" }, runsList(run.id), runItem(run, tab, r.sub));
-      const trail = [ws, ["Runs", "#runs"], [flow.name + " " + shortId(run.id), "#runs/" + run.id]];
-      trail.push([tab[0].toUpperCase() + tab.slice(1), "#runs/" + run.id + "/" + tab]);
       const d = r.sub && run.deliveries.find((x) => x.id === r.sub);
-      if (d) { trail.push([d.file || "Delivery " + d.id, location.hash]); panelFor = [run, d]; }
-      renderCrumbs(trail);
+      if (d) panelFor = [run, d];
     } else if (r.section === "flows") {
       const flow = flowById(r.id) || M.flows[0];
       view = h("div", { class: "master" }, flowsList(flow.id), flowItem(flow, r.tab));
-      renderCrumbs([ws, ["Flows", "#flows"], [flow.name, "#flows/" + flow.id], [(r.tab || "overview").replace(/^./, (c) => c.toUpperCase()), location.hash]]);
     } else if (r.section === "agents") {
       const agent = agentById(r.id) || M.agents[0];
       view = h("div", { class: "master" }, agentsList(agent.id), agentItem(agent, r.tab));
-      renderCrumbs([ws, ["Agents", "#agents"], [agent.name, "#agents/" + agent.id], [(r.tab || "overview").replace(/^./, (c) => c.toUpperCase()), location.hash]]);
     } else if (r.section === "components") {
       view = sheet();
-      renderCrumbs([ws, ["Component sheet", "#components"]]);
     } else if (r.section === "audit") {
       view = simple("Audit", "Checkpoints and the audit trail export come with M2.");
-      renderCrumbs([ws, ["Audit", "#audit"]]);
     } else {
       view = simple("Settings", "Users, roles, and API tokens come with M3. Reduce motion is in the account menu.");
-      renderCrumbs([ws, ["Settings", "#settings"]]);
     }
     const focusedKey = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.key;
     $("view").replaceChildren(view);

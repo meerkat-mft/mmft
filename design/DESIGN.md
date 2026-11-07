@@ -151,7 +151,7 @@ The layout follows the master-detail model, as in large cloud consoles, with one
 - **Cards:** the work floats on the base as rounded cards: the list, the opened item, and the panel. Cards are separated from each other and from the window's edges by the same gap.
 - **List:** the section's items, such as runs or agents, with filters above them.
 - **Opened item:** selecting an item opens it in a card next to the list. Its sections are **tabs** across the top of the card, such as Overview, Canvas, Versions, and Runs for a flow, or Overview, Deliveries, Identity, and Activity for an agent. Tabs keep the content at full width, where a vertical menu would spend a column on a few short labels.
-- **One deeper level:** an item inside an opened item, such as a delivery inside a run, opens in the **panel**, a card on the right, with breadcrumbs. There's never a second panel. Going deeper replaces the panel's content.
+- **One deeper level:** an item inside an opened item, such as a delivery inside a run, opens in the **panel**, a card on the right. There's never a second panel. Going deeper replaces the panel's content.
 - **Addresses:** every list, item, and panel has its own address, so links can be shared and the browser's back button always works.
 
 **Spacing follows the 8-point grid.** Every padding, margin, gap, and control height is a multiple of 8. 4px is allowed only for fine adjustments inside a component, such as between an icon and its label. Using one small set of distances everywhere is what makes the layout feel calm and deliberate.
@@ -168,7 +168,9 @@ Width is used in this order:
 
 Data views (tables, the flow canvas, timelines) fill their card. Forms, settings, and prose are capped at a 72-character line.
 
-The top bar holds the breadcrumbs on the left, a command palette in the centre on `Ctrl/⌘ K` for jumping to any flow, run, agent, or delivery by name or ID, the orchestrator and relay connection status, the alerts indicator, and the user menu.
+The top bar holds a command palette in the centre, on `Ctrl/⌘ K`, for jumping to any flow, run, agent, or delivery by name or ID. On the right are the orchestrator and relay connection status, the alerts indicator, and the user menu.
+
+There are no breadcrumbs. The selected section in the sidebar, the selected row in the list, and the selected tab already say where you are. A page opened on its own, such as a delivery in full-page view, has a back link above its title.
 
 ```yaml
 spacing:

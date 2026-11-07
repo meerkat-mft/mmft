@@ -102,7 +102,7 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 1.5; flex: none; }
   box-shadow: inset 2px 0 var(--color-primary);
 }
 
-/* Breadcrumbs left, the palette centred, everything else right. */
+/* The palette centred, everything else right. */
 .topbar {
   grid-column: 2 / -1;
   display: grid;
@@ -111,11 +111,7 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 1.5; flex: none; }
   gap: var(--spacing-md);
   min-width: 0;
 }
-.crumbs { display: flex; align-items: center; gap: var(--spacing-xs); min-width: 0; overflow: hidden; white-space: nowrap; }
-.crumbs a { color: var(--color-on-surface-muted); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--rounded-control); transition: background var(--dur-fast) var(--ease-in); }
-.crumbs a:hover { color: var(--color-on-surface); background: var(--color-surface-card); }
-.crumbs .sep { color: var(--color-on-surface-muted); }
-.crumbs [aria-current="page"] { color: var(--color-on-surface); font-weight: 500; padding: 0 var(--spacing-sm); overflow: hidden; text-overflow: ellipsis; }
+.palette-trigger { grid-column: 2; }
 .top-actions { justify-self: end; display: flex; align-items: center; gap: var(--spacing-sm); }
 .palette-trigger {
   display: flex;
