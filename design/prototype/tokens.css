@@ -1,0 +1,47 @@
+/* Generated from design/DESIGN.md by tokens.sh. Do not edit. */
+:root {
+  --color-primary: #e2a04a;
+  --color-primary-hover: #e5ab60;
+  --color-on-primary: #1a1208;
+  --color-surface-base: #0b111a;
+  --color-surface-recessed: #0f1724;
+  --color-surface-card: #192637;
+  --color-surface-hover: #1f2e42;
+  --color-surface-selected: #26374e;
+  --color-surface-floating: #2d4059;
+  --color-on-surface: #e6ecf4;
+  --color-on-surface-muted: #9daec6;
+  --color-success: #4cc38a;
+  --color-error: #ff7378;
+  --color-warning: #b0a0ff;
+  --color-info: #5eaef5;
+  --color-cancelled: #9aabc2;
+  --color-scrim: #05080d;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+  --spacing-xxxl: 64px;
+  --spacing-gap: 16px;
+  --spacing-card-padding: 16px;
+  --spacing-content-padding: 24px;
+  --spacing-row: 32px;
+  --spacing-control: 32px;
+  --spacing-tab-bar: 40px;
+  --spacing-control-lg: 40px;
+  --spacing-search: 400px;
+  --spacing-topbar: 72px;
+  --spacing-sidebar: 240px;
+  --spacing-sidebar-collapsed: 64px;
+  --spacing-list-pane: 360px;
+  --spacing-panel: 440px;
+  --spacing-panel-dock-min-viewport: 1600px;
+  --rounded-none: 0px;
+  --rounded-chip: 6px;
+  --rounded-control: 8px;
+  --rounded-card: 12px;
+  --rounded-full: 9999px;
+}
+
