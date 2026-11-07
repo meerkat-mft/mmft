@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Meerkat console prototype</title>
+    <!-- Prototype only: the real console self-hosts its fonts and icons under a same-origin content security policy. -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu+Sans:wght@400;500;600&family=Ubuntu+Sans+Mono:wght@400;500&display=swap" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="shell" id="shell">
+      <aside class="sidebar" aria-label="Main">
+        <button class="workspace" type="button" id="workspace">
+          <img src="../../assets/brand/meerkat-icon.svg" alt="" width="24" height="24" />
+          <span class="workspace-name"></span>
+          <i data-lucide="chevrons-up-down" aria-hidden="true"></i>
+        </button>
+        <nav class="nav" id="nav"></nav>
+        <div class="nav-foot">
+          <a class="nav-item" href="#components"><i data-lucide="component" aria-hidden="true"></i><span>Component sheet</span></a>
+        </div>
+      </aside>
+
+      <header class="topbar">
+        <button class="palette-trigger" type="button" id="open-palette">
+          <i data-lucide="search" aria-hidden="true"></i><span>Go to a flow, run, agent, or delivery</span><kbd id="palette-key">Ctrl K</kbd>
+        </button>
+        <div class="top-actions">
+          <span class="conn" id="conn"></span>
+          <button class="icon-button" type="button" id="alerts" aria-label="Alerts">
+            <i data-lucide="bell" aria-hidden="true"></i><span class="badge" id="alert-count"></span>
+          </button>
+          <div class="user">
+            <button class="icon-button" type="button" id="user-button" aria-haspopup="menu" aria-expanded="false" aria-label="sam.lee, account menu">
+              <span class="avatar">SL</span>
+            </button>
+            <div class="menu" id="user-menu" role="menu" hidden>
+              <div class="menu-head">sam.lee<small>Administrator</small></div>
+              <label class="menu-item switch" role="menuitemcheckbox">
+                <span>Reduce motion</span>
+                <input type="checkbox" id="reduce-motion" />
+              </label>
+              <a class="menu-item" role="menuitem" href="#settings">Settings</a>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="view" id="view" tabindex="-1"></main>
+
+      <aside class="panel" id="panel" aria-label="Details" hidden></aside>
+    </div>
+
+    <div class="palette-scrim" id="palette" hidden>
+      <div class="palette" role="dialog" aria-modal="true" aria-label="Go to anything">
+        <label class="palette-input">
+          <i data-lucide="search" aria-hidden="true"></i>
+          <input id="palette-input" type="text" placeholder="Flow, run, agent, or delivery ID" autocomplete="off" />
+        </label>
+        <ul class="palette-results" id="palette-results" role="listbox"></ul>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
