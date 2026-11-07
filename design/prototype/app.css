@@ -386,21 +386,64 @@ kbd { font: 400 11px/1 var(--font-sans); padding: var(--spacing-xs); border-radi
 .progress { height: 4px; border-radius: var(--rounded-full); background: var(--color-surface-selected); overflow: hidden; min-width: 80px; }
 .progress span { display: block; height: 100%; border-radius: var(--rounded-full); background: var(--color-info); transition: width var(--dur-slow) var(--ease-in); }
 
-/* ---- Tables: rows sit on the card, and get a shape only on hover or selection ---- */
-.table-wrap { overflow-x: auto; margin: 0 calc(-1 * var(--spacing-sm)); }
+/* ---- Tables: a recessed header band starts the table, hairlines guide the
+   eye along each row, and a row gets a rounded fill on hover or selection ---- */
+/* No overflow here: a scrolling wrapper would stop the header band sticking.
+   The content area scrolls instead. */
+.table-wrap { margin: 0 calc(-1 * var(--spacing-sm)); }
 table { border-collapse: separate; border-spacing: 0; width: 100%; }
 th { text-align: left; height: var(--spacing-row); padding: 0 var(--spacing-sm); color: var(--color-on-surface-muted); white-space: nowrap; }
-td { height: var(--spacing-row); padding: 0 var(--spacing-sm); white-space: nowrap; transition: background var(--dur-fast) var(--ease-in); }
-td:first-child { border-radius: var(--rounded-control) 0 0 var(--rounded-control); }
-td:last-child { border-radius: 0 var(--rounded-control) var(--rounded-control) 0; }
+thead th {
+  position: sticky;
+  /* Stick at the scroll area's top edge, not below its padding, so rows
+     never show above the band as they scroll past. */
+  top: calc(-1 * var(--spacing-md));
+  z-index: 1;
+  background: var(--color-surface-recessed);
+}
+thead th:first-child { border-radius: var(--rounded-control) 0 0 var(--rounded-control); }
+thead th:last-child { border-radius: 0 var(--rounded-control) var(--rounded-control) 0; }
+td {
+  height: var(--spacing-row);
+  padding: 0 var(--spacing-sm);
+  white-space: nowrap;
+  box-shadow: inset 0 -1px var(--color-surface-hover);
+  transition: background var(--dur-fast) var(--ease-in);
+}
+tbody tr:last-child td { box-shadow: none; }
 tbody tr { cursor: pointer; }
 tbody tr:hover td { background: var(--color-surface-hover); }
-tbody tr[aria-selected="true"] td { background: var(--color-surface-selected); }
+tbody tr[aria-selected="true"] td { background: var(--color-surface-selected); box-shadow: none; }
+tbody tr:hover td:first-child,
+tbody tr[aria-selected="true"] td:first-child { border-radius: var(--rounded-control) 0 0 var(--rounded-control); }
+tbody tr:hover td:last-child,
+tbody tr[aria-selected="true"] td:last-child { border-radius: 0 var(--rounded-control) var(--rounded-control) 0; }
 tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 var(--color-primary); }
 td.num, th.num { text-align: right; }
-td.file { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 td.file a { border-radius: var(--rounded-chip); }
 td.file a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Group headings: a label with its count, set apart by space, not a band. */
+tbody.group th { height: auto; padding: var(--spacing-md) var(--spacing-sm) var(--spacing-xs); font: 500 11px/1.4 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; }
+tbody.group:first-of-type th { padding-top: var(--spacing-sm); }
+tbody.group .count { margin-left: var(--spacing-sm); color: var(--color-on-surface); }
+tbody.group tr { cursor: default; }
+tbody.group tr:hover td { background: none; }
+tr.fold { cursor: default; }
+tr.fold:hover td { background: none; }
+.btn-link { color: var(--color-on-surface-muted); font-size: 12px; border-radius: var(--rounded-chip); }
+.btn-link:hover { color: var(--color-on-surface); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Fitted columns: every column shrinks to its content and the file column
+   takes the rest, so related values stay close at any width. */
+table.fitted td.file { width: 100%; max-width: 0; }
+table.fitted td.file a { display: block; overflow: hidden; text-overflow: ellipsis; }
+table.fitted tr.two-line td { height: auto; padding-top: var(--spacing-sm); padding-bottom: var(--spacing-sm); }
+/* 20px + 4px + 16px, plus 8px above and below: a 56px row on the grid. */
+table.fitted tr.two-line td.file a { line-height: 20px; }
+table.fitted .why { display: block; margin-top: var(--spacing-xs); color: var(--color-on-surface-muted); font-size: 12px; line-height: 16px; white-space: normal; }
+table.fitted .why .mono { color: var(--color-on-surface); }
+table.fitted td.file .progress { margin-top: var(--spacing-sm); max-width: 240px; }
 .gone { color: var(--color-on-surface-muted); font-style: italic; }
 
 /* ---- Facts, callouts, code, and timelines ---- */

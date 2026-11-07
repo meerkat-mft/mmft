@@ -164,6 +164,7 @@
   }
 
   let lastAttention = null;
+  const unfolded = new Set();
   function runDeliveries(run, selected, c) {
     const calm = c.attention === 0;
     const headline = h("div", { class: "headline" + (calm ? " calm" : "") },
@@ -179,29 +180,51 @@
         h("span", {}, statusIcon("retry_wait"), c.retry_wait + " retrying"),
         c.active ? h("span", {}, statusIcon("transferring"), c.active + " in progress") : null,
         h("span", {}, statusIcon("succeeded"), c.succeeded + " succeeded")));
-    // What needs attention leads; successes recede below it.
-    const order = { failed: 0, retry_wait: 1, transferring: 2, succeeded: 3 };
-    const rows = [...run.deliveries].sort((a, b) => order[a.status] - order[b.status]);
-    // The file name is a real link to the delivery's address, so it can be
-    // read by a screen reader and opened in a new tab. The whole row still
-    // opens it on a plain click.
+    // Rows are grouped by what they need from you: attention first, then
+    // what is still moving, then successes, which collapse after four rows.
+    const GROUPS = [
+      ["Needs attention", ["failed", "retry_wait"]],
+      ["In progress", ["pending", "claimed", "transferring", "verifying"]],
+      ["Succeeded", ["succeeded"]],
+      ["Cancelled", ["cancelled"]],
+    ];
+    const FOLD = 4;
     const row = (d) => {
       const href = "#runs/" + run.id + "/deliveries/" + d.id;
+      // A row that needs attention says why on a second line, under the file.
+      const why = d.error || d.next ? h("span", { class: "why" },
+        d.error ? h("span", { class: "mono" }, d.error) : null, d.error && d.next ? " · " : null,
+        d.next ? h("span", { id: "next-" + d.id }, d.next) : null) : null;
+      const moving = d.progress != null && d.status === "transferring"
+        ? h("div", { class: "progress", id: "progress-" + d.id }, (() => { const s = h("span"); s.style.width = Math.round(d.progress * 100) + "%"; return s; })()) : null;
       return h("tr", {
+        class: why || moving ? "two-line" : null,
         "aria-selected": String(d.id === selected),
         onclick: (e) => { if (!(e.metaKey || e.ctrlKey || e.shiftKey)) location.hash = href; },
       },
       h("td", {}, chip(d.status, d.changed)),
-      h("td", { class: "file" }, h("a", { href, data: { key: d.id }, "aria-label": d.file == null ? "Delivery " + d.id + ", name deleted by retention" : null }, fileName(d.file))),
-      h("td", { class: "muted" }, d.from, " → ", d.to),
+      // The file name is a real link to the delivery's address, so it can be
+      // read by a screen reader and opened in a new tab.
+      h("td", { class: "file" }, h("a", { href, data: { key: d.id }, "aria-label": d.file == null ? "Delivery " + d.id + ", name deleted by retention" : null }, fileName(d.file)), why, moving),
+      h("td", { class: "muted" }, "→ " + d.to),
       h("td", { class: "num muted" }, d.size),
-      h("td", {}, evidence(d.evidence, d.changed)),
-      h("td", { class: "muted" }, d.error ? h("span", { class: "mono" }, d.error) : null,
-        d.progress != null && d.status === "transferring" ? h("div", { class: "progress", id: "progress-" + d.id }, (() => { const s = h("span"); s.style.width = Math.round(d.progress * 100) + "%"; return s; })()) : null));
+      h("td", {}, evidence(d.evidence, d.changed)));
     };
-    const table = h("div", { class: "table-wrap" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["Status", "File", "Route", "Size", "Evidence", "Error"].map((t, i) => h("th", { class: "t-label-sm" + (i === 3 ? " num" : "") }, t)))),
-      h("tbody", {}, rows.map(row))));
+    const cols = ["Status", "File", "Destination", "Size", "Evidence"];
+    const bodies = [];
+    GROUPS.forEach(([label, statuses]) => {
+      const rows = run.deliveries.filter((d) => statuses.includes(d.status));
+      if (!rows.length) return;
+      const folds = label === "Succeeded" && !unfolded.has(run.id) && rows.length > FOLD + 1;
+      const shown = folds ? rows.slice(0, FOLD) : rows;
+      bodies.push(h("tbody", { class: "group" }, h("tr", {}, h("th", { colspan: String(cols.length), scope: "colgroup" }, label, h("span", { class: "count" }, String(rows.length))))));
+      bodies.push(h("tbody", {}, shown.map(row),
+        folds ? h("tr", { class: "fold" }, h("td", {}), h("td", { colspan: String(cols.length - 1) },
+          h("button", { class: "btn-link", type: "button", onclick: (e) => { e.stopPropagation(); unfolded.add(run.id); render(); } }, "Show " + (rows.length - FOLD) + " more succeeded"))) : null));
+    });
+    const table = h("div", { class: "table-wrap" }, h("table", { class: "fitted" },
+      h("thead", {}, h("tr", {}, cols.map((t, i) => h("th", { class: "t-label-sm" + (i === 3 ? " num" : ""), scope: "col" }, t)))),
+      ...bodies));
     queueMicrotask(() => tickTo($("attention-count"), lastAttention, c.attention));
     lastAttention = c.attention;
     return h("div", { style: "display:grid;gap:16px" }, summary, table);
@@ -453,6 +476,8 @@
     const countdown = setInterval(() => {
       left--;
       d06.next = left > 0 ? "Next attempt in " + left + " s, attempt 2 of 5" : "Attempt 2 of 5 started";
+      const next = document.getElementById("next-d06");
+      if (next) next.textContent = d06.next;
       if (left <= 0) {
         clearInterval(countdown);
         setTimeout(() => {

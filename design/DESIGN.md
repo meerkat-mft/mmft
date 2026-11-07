@@ -164,7 +164,7 @@ The layout follows the master-detail model, as in large cloud consoles, with one
 Width is used in this order:
 1. **1080p:** the panel slides over the page, with the floating surface and a shadow.
 2. **From 1600px wide:** the panel docks beside the opened item as a card, and can stay open.
-3. **Wider still:** the remaining width goes to more table columns.
+3. **Wider still:** tables keep their columns fitted to their content, and the remaining width goes to each table's main text column.
 
 Data views (tables, the flow canvas, timelines) fill their card. Forms, settings, and prose are capped at a 72-character line.
 
@@ -287,9 +287,10 @@ components:
     backgroundColor: "{colors.surface-selected}"
     textColor: "{colors.on-surface}"
   table-header:
-    backgroundColor: "{colors.surface-card}"
+    backgroundColor: "{colors.surface-recessed}"
     textColor: "{colors.on-surface-muted}"
     typography: "{typography.label-sm}"
+    rounded: "{rounded.control}"
     height: 32px
   tab:
     backgroundColor: "{colors.surface-card}"
@@ -377,6 +378,15 @@ components:
     textColor: "{colors.cancelled}"
 ```
 
+### Tables
+
+- **The header starts the table.** Column headers sit on a recessed band, one step darker than the card and rounded to 8px, so it's clear where the table begins. The band stays in view while the rows scroll.
+- **A hairline separates rows.** Each row has a 1px line under it in the hover colour. It's the one divider in the console, because on a wide screen it carries the eye along a row. A row still gets a rounded fill on hover and selection.
+- **Columns fit their content.** The spare width goes to the main text column, such as the file name, so related values stay close together at every width.
+- **What needs attention comes first, under a heading.** Rows are grouped under "Needs attention", then "In progress", then "Succeeded", each with its count. Successes collapse after four rows behind a "Show N more" button.
+- **A row that needs attention explains itself.** Its error code and next step sit on a second line under its main text, so the reason is never cut off in a last column.
+- **Values that are the same on every row stay out.** A run's source agent is in the run's header, so the route column shows only the destination.
+
 ### Status
 
 Each delivery and run status has a colour, a Lucide icon, and a label, always shown together. The colour goes on the icon only, and the label is plain text:
@@ -439,7 +449,7 @@ WCAG 2.2 AA is a hard rule, built into these tokens rather than fixed screen by 
 ## Do's and Don'ts
 
 - Do use amber once per screen, for the main action, plus the selected item's edge and the focus ring. Don't use it for status, charts, or decoration.
-- Do separate areas with space and surface steps. Don't reach for borders, dividers, or boxes around everything.
+- Do separate areas with space and surface steps. Don't reach for borders, dividers, or boxes around everything. The hairline between table rows is the one exception.
 - Do pair every status colour with its icon and label. Don't rely on colour alone.
 - Do keep status colour on the icon. Don't tint chip backgrounds or colour the labels or evidence of things that went well. A summary bar is the exception: every part keeps its colour.
 - Do show IDs, hashes, error codes, and commands in the mono face, and make them easy to copy.
