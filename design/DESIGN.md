@@ -39,9 +39,9 @@ Every colour comes from the logo's navy (`#14202E`) and its amber (`#E2A04A`). T
   - **Floating:** menus, dialogs, tooltips, and the panel when it overlays the page.
 - **Text:** a cool off-white for primary text, and a muted blue-grey for metadata and labels.
 - **Status:** green for succeeded, red for failed, violet for warning and retrying, blue for in progress, and slate for cancelled. Violet keeps warnings well clear of the brand's amber. Every status also has an icon and a label, so colour is never the only signal.
-- **Status containers:** each status has a dark tinted background for chips, made by mixing 16% of the status colour into the card surface.
+- **Colour marks what needs attention.** A status colour goes on the status icon only. The label beside it stays in the primary text colour, and there are no tinted backgrounds. Evidence marks and summary bars stay neutral where things went well, so a page of successes reads calm and a failure is the first colour the eye finds.
 
-Every text colour below is at least 4.5:1 against every surface on the ladder and against its own container. Every status colour is at least 3:1 against every surface for icons and marks.
+Every text colour below is at least 4.5:1 against every surface on the ladder. Every status colour is at least 3:1 against every surface for icons and marks.
 
 ```yaml
 colors:
@@ -57,15 +57,10 @@ colors:
   on-surface: "#E6ECF4"
   on-surface-muted: "#97A8C0"
   success: "#4CC38A"
-  success-container: "#1D383C"
   error: "#FF7378"
-  error-container: "#3A2C39"
   warning: "#B0A0FF"
-  warning-container: "#2D334F"
   info: "#5EAEF5"
-  info-container: "#20354D"
   cancelled: "#9AABC2"
-  cancelled-container: "#293545"
   scrim: "#05080D"
 ```
 
@@ -173,7 +168,7 @@ Width is used in this order:
 
 Data views (tables, the flow canvas, timelines) fill their card. Forms, settings, and prose are capped at a 72-character line.
 
-The top bar holds the breadcrumbs, a command palette on `Ctrl/⌘ K` for jumping to any flow, run, agent, or delivery by name or ID, the orchestrator and relay connection status, the alerts indicator, and the user menu.
+The top bar holds the breadcrumbs on the left, a command palette in the centre on `Ctrl/⌘ K` for jumping to any flow, run, agent, or delivery by name or ID, the orchestrator and relay connection status, the alerts indicator, and the user menu.
 
 ```yaml
 spacing:
@@ -358,36 +353,29 @@ components:
     textColor: "{colors.on-surface}"
     rounded: "{rounded.control}"
     padding: 16px
-  chip-success:
-    backgroundColor: "{colors.success-container}"
+  status-label:
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-sm}"
+  status-icon-success:
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.success}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.chip}"
-  chip-error:
-    backgroundColor: "{colors.error-container}"
+  status-icon-error:
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.error}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.chip}"
-  chip-warning:
-    backgroundColor: "{colors.warning-container}"
+  status-icon-warning:
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.warning}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.chip}"
-  chip-info:
-    backgroundColor: "{colors.info-container}"
+  status-icon-info:
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.info}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.chip}"
-  chip-cancelled:
-    backgroundColor: "{colors.cancelled-container}"
+  status-icon-cancelled:
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.cancelled}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.chip}"
 ```
 
 ### Status
 
-Each delivery and run status has a colour, a Lucide icon, and a label, always shown together:
+Each delivery and run status has a colour, a Lucide icon, and a label, always shown together. The colour goes on the icon only, and the label is plain text:
 
 | Status | Colour | Icon | Label |
 | --- | --- | --- | --- |
@@ -400,7 +388,7 @@ Each delivery and run status has a colour, a Lucide icon, and a label, always sh
 
 ### Evidence
 
-Evidence is shown as **two marks**: the first for the source's signed manifest, the second for the destination's signed receipt. A filled mark means signed, and an outlined mark means missing. Both filled reads `verified` in the success colour. One filled reads `source_only` in the primary text colour. None filled reads `none` in the muted colour. The label always sits beside the marks.
+Evidence is shown as **two marks**: the first for the source's signed manifest, the second for the destination's signed receipt. A filled mark means signed, and an outlined mark means missing. Marks and labels are neutral: `verified` and `source_only` in the primary text colour, and `none` in the muted colour. The filled marks tell them apart, and the status beside them carries the colour. The label always sits beside the marks.
 
 ### Untrusted text
 
@@ -449,6 +437,7 @@ WCAG 2.2 AA is a hard rule, built into these tokens rather than fixed screen by 
 - Do use amber once per screen, for the main action, plus the selected item's edge and the focus ring. Don't use it for status, charts, or decoration.
 - Do separate areas with space and surface steps. Don't reach for borders, dividers, or boxes around everything.
 - Do pair every status colour with its icon and label. Don't rely on colour alone.
+- Do keep status colour on the icon. Don't tint chip backgrounds or colour the labels, evidence, or summary bars of things that went well.
 - Do show IDs, hashes, error codes, and commands in the mono face, and make them easy to copy.
 - Do nest corners: 12px for cards, 8px for anything inside them, and 6px for chips. Don't round anything more for emphasis.
 - Do keep every padding, margin, gap, and height on the 8-point grid. Use 4px only inside a component.
