@@ -27,13 +27,19 @@ It should feel like calm enterprise infrastructure: trustworthy, quiet, and conf
 
 ## Colors
 
-Every colour comes from the logo's navy (`#14202E`) and its amber (`#E2A04A`). Surfaces form a ladder of six navy steps: darker means further back. Each step is the same small increase in lightness, so the hierarchy reads without borders.
+Every colour comes from the logo's navy (`#14202E`) and its amber (`#E2A04A`). There is one dark **base layer**, and the work sits on it in rounded **cards**, each a clear step lighter. Inside a card, the steps above it mark hover, selection, and things that float. Each step is the same small increase in lightness, so the hierarchy reads without borders.
 
 - **Primary, amber (`#E2A04A`):** the brand and the one primary action on a screen. It also marks the selected item's leading edge and the keyboard focus ring. Amber never means a status, so no warning, error, or progress state uses it.
-- **Surface ladder:** the sidebar is the darkest step, recessed as the frame. Then the page, then the list and content, then the opened item's tab bar, then hover, then floating layers: menus, dialogs, and the panel when it overlays the page.
+- **Surface ladder:**
+  - **Base:** the one background behind everything. The sidebar and top bar sit directly on it, with no box of their own.
+  - **Recessed:** wells inside a card, such as inputs, code blocks, and the flow canvas.
+  - **Card:** the list, the opened item, and the panel.
+  - **Hover:** a row, tab, or control being pointed at.
+  - **Selected:** the selected row or item, which also gets the amber edge.
+  - **Floating:** menus, dialogs, tooltips, and the panel when it overlays the page.
 - **Text:** a cool off-white for primary text, and a muted blue-grey for metadata and labels.
 - **Status:** green for succeeded, red for failed, violet for warning and retrying, blue for in progress, and slate for cancelled. Violet keeps warnings well clear of the brand's amber. Every status also has an icon and a label, so colour is never the only signal.
-- **Status containers:** each status has a dark tinted background for chips, made by mixing 16% of the status colour into the content surface.
+- **Status containers:** each status has a dark tinted background for chips, made by mixing 16% of the status colour into the card surface.
 
 Every text colour below is at least 4.5:1 against every surface on the ladder and against its own container. Every status colour is at least 3:1 against every surface for icons and marks.
 
@@ -42,11 +48,11 @@ colors:
   primary: "#E2A04A"
   primary-hover: "#E5AB60"
   on-primary: "#1A1208"
-  surface-sidebar: "#0B111A"
-  surface-page: "#0F1724"
-  surface-content: "#141E2D"
-  surface-detail: "#192637"
-  surface-raised: "#1F2E42"
+  surface-base: "#0B111A"
+  surface-recessed: "#0F1724"
+  surface-card: "#141E2D"
+  surface-hover: "#192637"
+  surface-selected: "#1F2E42"
   surface-floating: "#26374E"
   on-surface: "#E6ECF4"
   on-surface-muted: "#97A8C0"
@@ -146,39 +152,48 @@ typography:
 
 The layout follows the master-detail model, as in large cloud consoles, with one firm limit on depth.
 
-- **Global sidebar:** the recessed frame on the left. It holds the workspace switcher, then Flows, Runs, Agents, Audit, and Settings, with an icon and a label each.
+- **Base layer:** the global sidebar and the top bar sit directly on the base, with no box. The sidebar holds the workspace switcher, then Flows, Runs, Agents, Audit, and Settings, with an icon and a label each.
+- **Cards:** the work floats on the base as rounded cards: the list, the opened item, and the panel. Cards are separated from each other and from the window's edges by the same gap.
 - **List:** the section's items, such as runs or agents, with filters above them.
-- **Opened item:** selecting an item opens it next to the list. Its sections are **tabs** across the top of its content, such as Overview, Canvas, Versions, and Runs for a flow, or Overview, Deliveries, Identity, and Activity for an agent. Tabs keep the content at full width, where a vertical menu would spend a column on a few short labels.
-- **One deeper level:** an item inside an opened item, such as a delivery inside a run, opens in a **panel** on the right, with breadcrumbs. There's never a second panel. Going deeper replaces the panel's content.
+- **Opened item:** selecting an item opens it in a card next to the list. Its sections are **tabs** across the top of the card, such as Overview, Canvas, Versions, and Runs for a flow, or Overview, Deliveries, Identity, and Activity for an agent. Tabs keep the content at full width, where a vertical menu would spend a column on a few short labels.
+- **One deeper level:** an item inside an opened item, such as a delivery inside a run, opens in the **panel**, a card on the right, with breadcrumbs. There's never a second panel. Going deeper replaces the panel's content.
 - **Addresses:** every list, item, and panel has its own address, so links can be shared and the browser's back button always works.
+
+**Spacing follows the 8-point grid.** Every padding, margin, gap, and control height is a multiple of 8. 4px is allowed only for fine adjustments inside a component, such as between an icon and its label. Using one small set of distances everywhere is what makes the layout feel calm and deliberate.
+
+- **Between cards, and around the window's edge:** 8px.
+- **Inside a card:** 16px of padding for the list and the panel, and 24px for the opened item's content.
+- **Inside content:** 16px between groups, and 8px within a group.
+- **Heights:** 32px for rows, buttons, and inputs. 40px for tabs. 48px for the top bar.
 
 Width is used in this order:
 1. **1080p:** the panel slides over the page, with the floating surface and a shadow.
-2. **From 1600px wide:** the panel docks beside the page and can stay open.
+2. **From 1600px wide:** the panel docks beside the opened item as a card, and can stay open.
 3. **Wider still:** the remaining width goes to more table columns.
 
-Data views (tables, the flow canvas, timelines) fill the width. Forms, settings, and prose are capped at a 72-character line.
+Data views (tables, the flow canvas, timelines) fill their card. Forms, settings, and prose are capped at a 72-character line.
 
-Spacing uses a 4px grid. Rows are 32px. Groups are separated by space and surface steps, not by lines.
-
-The global top bar holds the breadcrumbs, a command palette on `Ctrl/⌘ K` for jumping to any flow, run, agent, or delivery by name or ID, the orchestrator and relay connection status, the alerts indicator, and the user menu.
+The top bar holds the breadcrumbs, a command palette on `Ctrl/⌘ K` for jumping to any flow, run, agent, or delivery by name or ID, the orchestrator and relay connection status, the alerts indicator, and the user menu.
 
 ```yaml
 spacing:
-  xxs: 2px
   xs: 4px
   sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-  xxl: 32px
+  md: 16px
+  lg: 24px
+  xl: 32px
+  xxl: 48px
+  xxxl: 64px
+  gap: 8px
+  card-padding: 16px
+  content-padding: 24px
   row: 32px
   control: 32px
-  topbar: 48px
-  sidebar: 232px
-  sidebar-collapsed: 56px
-  list-pane: 360px
   tab-bar: 40px
+  topbar: 48px
+  sidebar: 240px
+  sidebar-collapsed: 64px
+  list-pane: 360px
   panel: 440px
   panel-dock-min-viewport: 1600px
   measure-ch: 72
@@ -186,25 +201,32 @@ spacing:
 
 ## Elevation & Depth
 
-Depth comes from the **surface ladder**, not from lines or shadows. A thing that sits in front is one step lighter than what's behind it. Borders are kept to a minimum. A hairline appears only where two areas share a surface step and still need separating, such as columns in a dense table. Even then it's the next surface step up, never a contrasting colour.
+There is **one base layer**, and the work floats on it as cards. A card is one clear step lighter than the base, with no border and no shadow. Inside a card, things are separated by space, not lines: rows have no fill at rest, and groups are set apart by the 8-point gaps. Avoid putting cards inside cards. A recessed well, a step darker than the card, holds inputs, code blocks, and the flow canvas.
 
 Shadows are used only for things that float above the page: menus, dialogs, tooltips, and the panel when it overlays the page at 1080p. Floating layers use the floating surface, a soft shadow (`0 8px 24px` in the scrim colour at 45%), and a scrim behind modal dialogs.
 
 **Interaction states** stay inside the same language:
 
-- **Hover:** the item lifts one surface step.
-- **Selected:** the item lifts two surface steps and gets a 2px amber edge on its leading side: the left for items in a list, and the bottom for tabs.
+- **Hover:** the row, tab, or control gets the hover surface, with its control radius.
+- **Selected:** it gets the selected surface and a 2px amber edge on its leading side: the left for items in a list, and the bottom for tabs.
 - **Keyboard focus:** a 2px amber ring with a 2px offset, always visible. It's never removed, and never replaced by a hover style.
 - **Disabled:** the muted text colour, with no hover or selected state.
 
 ## Shapes
 
-One small radius, **4px**, everywhere: buttons, inputs, chips, rows, panels, menus, and dialogs. The same corner on every object is a large part of what makes the console feel like one system. Status and evidence marks are the only round shapes.
+Corners are **nested**: the outer shape is the roundest, and each shape inside it is less round, so nested corners sit concentric instead of clashing.
+
+- **Cards and the panel:** 12px.
+- **Controls inside cards:** 8px. That covers buttons, inputs, rows and their hover and selected fills, tabs, menu items, code blocks, and the canvas's nodes.
+- **Chips:** 6px.
+- **Status and evidence marks:** fully round. They're the only round shapes.
 
 ```yaml
 rounded:
   none: 0px
-  sm: 4px
+  chip: 6px
+  control: 8px
+  card: 12px
   full: 9999px
 ```
 
@@ -214,126 +236,153 @@ Component tokens set each component's surface, text, shape, and size. Behaviour 
 
 ```yaml
 components:
+  card:
+    backgroundColor: "{colors.surface-card}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.card}"
+    padding: 16px
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.on-primary}"
     typography: "{typography.body-md-strong}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
     height: 32px
-    padding: 12px
+    padding: 16px
   button-primary-hover:
     backgroundColor: "{colors.primary-hover}"
     textColor: "{colors.on-primary}"
   button-secondary:
-    backgroundColor: "{colors.surface-raised}"
+    backgroundColor: "{colors.surface-selected}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md-strong}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
     height: 32px
-    padding: 12px
+    padding: 16px
   button-secondary-hover:
     backgroundColor: "{colors.surface-floating}"
     textColor: "{colors.on-surface}"
   nav-item:
-    backgroundColor: "{colors.surface-sidebar}"
+    backgroundColor: "{colors.surface-base}"
     textColor: "{colors.on-surface-muted}"
     typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
     height: 32px
+    padding: 8px
   nav-item-hover:
-    backgroundColor: "{colors.surface-page}"
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.on-surface}"
   nav-item-selected:
-    backgroundColor: "{colors.surface-content}"
+    backgroundColor: "{colors.surface-hover}"
     textColor: "{colors.on-surface}"
   list-row:
-    backgroundColor: "{colors.surface-content}"
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
     height: 32px
+    padding: 8px
   list-row-hover:
-    backgroundColor: "{colors.surface-detail}"
+    backgroundColor: "{colors.surface-hover}"
     textColor: "{colors.on-surface}"
   list-row-selected:
-    backgroundColor: "{colors.surface-raised}"
+    backgroundColor: "{colors.surface-selected}"
     textColor: "{colors.on-surface}"
   table-header:
-    backgroundColor: "{colors.surface-content}"
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.on-surface-muted}"
     typography: "{typography.label-sm}"
-    height: 28px
+    height: 32px
   tab:
-    backgroundColor: "{colors.surface-detail}"
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.on-surface-muted}"
     typography: "{typography.body-md}"
+    rounded: "{rounded.control}"
     height: 40px
-    padding: 12px
+    padding: 16px
   tab-hover:
-    backgroundColor: "{colors.surface-raised}"
+    backgroundColor: "{colors.surface-hover}"
     textColor: "{colors.on-surface}"
   tab-selected:
-    backgroundColor: "{colors.surface-detail}"
+    backgroundColor: "{colors.surface-card}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md-strong}"
   panel:
+    backgroundColor: "{colors.surface-card}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.card}"
+    width: 440px
+    padding: 16px
+  panel-overlay:
     backgroundColor: "{colors.surface-floating}"
     textColor: "{colors.on-surface}"
-    width: 440px
+    rounded: "{rounded.card}"
   menu:
     backgroundColor: "{colors.surface-floating}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.card}"
+    padding: 8px
+  menu-item:
+    backgroundColor: "{colors.surface-floating}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.control}"
+    height: 32px
   dialog:
     backgroundColor: "{colors.surface-floating}"
     textColor: "{colors.on-surface}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.card}"
+    padding: 24px
   dialog-scrim:
     backgroundColor: "{colors.scrim}"
   tooltip:
     backgroundColor: "{colors.surface-floating}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
+    padding: 8px
   input:
-    backgroundColor: "{colors.surface-sidebar}"
+    backgroundColor: "{colors.surface-recessed}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
     height: 32px
     padding: 8px
   code-block:
-    backgroundColor: "{colors.surface-sidebar}"
+    backgroundColor: "{colors.surface-recessed}"
     textColor: "{colors.on-surface}"
     typography: "{typography.code-md}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.control}"
     padding: 8px
+  callout:
+    backgroundColor: "{colors.surface-hover}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.control}"
+    padding: 16px
   chip-success:
     backgroundColor: "{colors.success-container}"
     textColor: "{colors.success}"
     typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.chip}"
   chip-error:
     backgroundColor: "{colors.error-container}"
     textColor: "{colors.error}"
     typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.chip}"
   chip-warning:
     backgroundColor: "{colors.warning-container}"
     textColor: "{colors.warning}"
     typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.chip}"
   chip-info:
     backgroundColor: "{colors.info-container}"
     textColor: "{colors.info}"
     typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.chip}"
   chip-cancelled:
     backgroundColor: "{colors.cancelled-container}"
     textColor: "{colors.cancelled}"
     typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.chip}"
 ```
 
 ### Status
@@ -398,10 +447,12 @@ WCAG 2.2 AA is a hard rule, built into these tokens rather than fixed screen by 
 ## Do's and Don'ts
 
 - Do use amber once per screen, for the main action, plus the selected item's edge and the focus ring. Don't use it for status, charts, or decoration.
-- Do separate areas with surface steps and space. Don't reach for borders, dividers, or boxes around everything.
+- Do separate areas with space and surface steps. Don't reach for borders, dividers, or boxes around everything.
 - Do pair every status colour with its icon and label. Don't rely on colour alone.
 - Do show IDs, hashes, error codes, and commands in the mono face, and make them easy to copy.
-- Do keep the 4px radius everywhere. Don't mix radii or round corners more for emphasis.
+- Do nest corners: 12px for cards, 8px for anything inside them, and 6px for chips. Don't round anything more for emphasis.
+- Do keep every padding, margin, gap, and height on the 8-point grid. Use 4px only inside a component.
+- Do keep one base layer with cards on it. Don't put cards inside cards, or give table rows a fill at rest.
 - Do keep titles small and let data be the content. Don't add hero areas, illustrations, gradients, or textures.
 - Do give every item its own address. Don't open a second panel or stack panels.
 - Do show what waits for approval and the exact CLI command. Don't add an approve button or take a credential in the console.

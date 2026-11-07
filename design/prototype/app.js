@@ -385,7 +385,7 @@
 
   // ---- Component sheet ---------------------------------------------------
   function sheet() {
-    const steps = [["Sidebar", "surface-sidebar"], ["Page", "surface-page"], ["Content", "surface-content"], ["Detail", "surface-detail"], ["Raised", "surface-raised"], ["Floating", "surface-floating"]];
+    const steps = [["Base", "surface-base"], ["Recessed", "surface-recessed"], ["Card", "surface-card"], ["Hover", "surface-hover"], ["Selected", "surface-selected"], ["Floating", "surface-floating"]];
     const section = (title, ...kids) => h("section", {}, h("h2", { class: "t-headline-sm" }, title), ...kids);
     return h("div", { class: "sheet view-enter" },
       h("h1", { class: "t-headline-md" }, "Component sheet"),
