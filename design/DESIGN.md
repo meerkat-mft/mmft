@@ -159,7 +159,7 @@ The layout follows the master-detail model, as in large cloud consoles, with one
 - **Between cards, and around the window's edge:** 16px.
 - **Inside a card:** 16px of padding for the list and the panel, and 24px for the opened item's content.
 - **Inside content:** 16px between groups, and 8px within a group.
-- **Heights:** 32px for rows, buttons, and inputs. 40px for tabs. 48px for the top bar.
+- **Heights:** 32px for rows, buttons, and inputs. 40px for tabs, the search field, and the workspace switcher. 72px for the top bar, which leaves 16px above and below the search field, the same as the gap between cards.
 
 Width is used in this order:
 1. **1080p:** the panel slides over the page, with the floating surface and a shadow.
@@ -168,7 +168,7 @@ Width is used in this order:
 
 Data views (tables, the flow canvas, timelines) fill their card. Forms, settings, and prose are capped at a 72-character line.
 
-The top bar holds a command palette in the centre, on `Ctrl/⌘ K`, for jumping to any flow, run, agent, or delivery by name or ID. On the right are the orchestrator and relay connection status, the alerts indicator, and the user menu.
+The top bar holds the search field in the centre, 400px wide. It opens the command palette, also on `Ctrl K` or `⌘ K` depending on the platform, for jumping to any flow, run, agent, or delivery by name or ID. It reads "Go to a flow, run, agent, or delivery" so it says what it finds. On the right are the orchestrator and relay connection status, the alerts indicator, and the user menu.
 
 There are no breadcrumbs. The selected section in the sidebar, the selected row in the list, and the selected tab already say where you are. A page opened on its own, such as a delivery in full-page view, has a back link above its title.
 
@@ -187,7 +187,9 @@ spacing:
   row: 32px
   control: 32px
   tab-bar: 40px
-  topbar: 48px
+  control-lg: 40px
+  search: 400px
+  topbar: 72px
   sidebar: 240px
   sidebar-collapsed: 64px
   list-pane: 360px

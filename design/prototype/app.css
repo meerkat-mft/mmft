@@ -73,7 +73,8 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 1.5; flex: none; }
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  height: var(--spacing-topbar);
+  height: var(--spacing-control-lg);
+  margin-top: calc((var(--spacing-topbar) - var(--spacing-control-lg)) / 2);
   padding: 0 var(--spacing-sm);
   border-radius: var(--rounded-control);
   text-align: left;
@@ -117,9 +118,9 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 1.5; flex: none; }
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  height: var(--spacing-control);
+  height: var(--spacing-control-lg);
   padding: 0 var(--spacing-sm) 0 var(--spacing-md);
-  width: 400px;
+  width: var(--spacing-search);
   border-radius: var(--rounded-control);
   background: var(--color-surface-card);
   color: var(--color-on-surface-muted);
@@ -127,7 +128,7 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 1.5; flex: none; }
 }
 .palette-trigger:hover { background: var(--color-surface-hover); }
 .palette-trigger span { flex: 1; text-align: left; }
-kbd { font: 400 11px/1 var(--font-mono); padding: var(--spacing-xs); border-radius: var(--rounded-chip); background: var(--color-surface-selected); color: var(--color-on-surface-muted); }
+kbd { font: 400 11px/1 var(--font-sans); padding: var(--spacing-xs); border-radius: var(--rounded-chip); background: var(--color-surface-hover); color: var(--color-on-surface-muted); }
 .conn { display: flex; gap: var(--spacing-md); padding: 0 var(--spacing-sm); color: var(--color-on-surface-muted); }
 .conn span { display: inline-flex; align-items: center; gap: var(--spacing-xs); }
 .dot { width: 8px; height: 8px; border-radius: var(--rounded-full); background: var(--color-success); }

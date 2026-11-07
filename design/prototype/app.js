@@ -519,6 +519,7 @@
     };
     const open = () => { palette.hidden = false; input.value = ""; sel = 0; draw(); input.focus(); };
     const close = () => { palette.hidden = true; };
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) $("palette-key").textContent = "⌘ K";
     $("open-palette").addEventListener("click", open);
     palette.addEventListener("click", (e) => { if (e.target === palette) close(); });
     input.addEventListener("input", () => { sel = 0; draw(); });

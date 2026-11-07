@@ -30,7 +30,9 @@
   --spacing-row: 32px;
   --spacing-control: 32px;
   --spacing-tab-bar: 40px;
-  --spacing-topbar: 48px;
+  --spacing-control-lg: 40px;
+  --spacing-search: 400px;
+  --spacing-topbar: 72px;
   --spacing-sidebar: 240px;
   --spacing-sidebar-collapsed: 64px;
   --spacing-list-pane: 360px;
