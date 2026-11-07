@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmft.dev/schemas/flow-version-v1.json",
+  "title": "Flow version payload, version 1",
+  "description": "The payload of a flow version statement, application/vnd.mmft.flow-version+json;v=1. See ADR 0022. The Go package internal/flow is the authority: it also rejects what a schema can't express, such as loops, an agents list that doesn't match the cards, and a destination on the source card's agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "flow_id", "workspace", "flow_version", "agents", "cards"],
+  "properties": {
+    "version": { "const": 1 },
+    "flow_id": { "$ref": "#/$defs/id" },
+    "workspace": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
+    "flow_version": { "type": "integer", "minimum": 1 },
+    "agents": {
+      "description": "Every agent the cards name, sorted and without repeats.",
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "cards": { "$ref": "#/$defs/cards" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "cards": {
+      "description": "The flow's cards as a flat list. Each card names its parent, and the one card without a parent is the source at the root.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/card" }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "agent", "path"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+        "type": { "enum": ["source", "destination"] },
+        "parent": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+        "agent": { "$ref": "#/$defs/id" },
+        "path": { "$ref": "#/$defs/path" }
+      },
+      "if": { "properties": { "type": { "const": "source" } } },
+      "then": { "properties": { "parent": false } },
+      "else": { "properties": { "parent": true }, "required": ["parent"] }
+    },
+    "path": {
+      "description": "An absolute path in its one canonical form, at most 1,024 bytes: a POSIX path, or a Windows path on an upper case drive.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "not": { "pattern": "[\\u0000-\\u001f\\u007f-\\u009f\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]" },
+      "oneOf": [
+        {
+          "pattern": "^/",
+          "not": { "pattern": "//|/\\.{1,2}(/|$)|.+/$" }
+        },
+        {
+          "pattern": "^[A-Z]:\\\\([^\\\\/<>:\"|?*]+(\\\\[^\\\\/<>:\"|?*]+)*)?$",
+          "not": { "pattern": "[. ](\\\\|$)" }
+        }
+      ]
+    }
+  }
+}
