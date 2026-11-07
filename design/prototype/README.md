@@ -16,7 +16,7 @@ Then open http://localhost:8732/design/prototype/. It's built for a full-screen 
 
 - **Runs:**
   - The runs list, with filters.
-  - An opened run, with a resource menu: Deliveries, Overview, Evidence, and Activity.
+  - An opened run, with tabs across the top: Deliveries, Overview, Evidence, and Activity.
   - A delivery in the right-hand panel. What needs attention sorts first.
 - **Flows:** an opened flow's Overview, which shows the draft waiting for approval and the exact CLI command, and its Canvas, a read-only tree of paths.
 - **Agents:** an opened agent, including one waiting for approval.

@@ -30,7 +30,7 @@ It should feel like calm enterprise infrastructure: trustworthy, quiet, and conf
 Every colour comes from the logo's navy (`#14202E`) and its amber (`#E2A04A`). Surfaces form a ladder of six navy steps: darker means further back. Each step is the same small increase in lightness, so the hierarchy reads without borders.
 
 - **Primary, amber (`#E2A04A`):** the brand and the one primary action on a screen. It also marks the selected item's leading edge and the keyboard focus ring. Amber never means a status, so no warning, error, or progress state uses it.
-- **Surface ladder:** the sidebar is the darkest step, recessed as the frame. Then the page, then the list and content, then the opened item's detail and resource menu, then hover, then floating layers: menus, dialogs, and the panel when it overlays the page.
+- **Surface ladder:** the sidebar is the darkest step, recessed as the frame. Then the page, then the list and content, then the opened item's tab bar, then hover, then floating layers: menus, dialogs, and the panel when it overlays the page.
 - **Text:** a cool off-white for primary text, and a muted blue-grey for metadata and labels.
 - **Status:** green for succeeded, red for failed, violet for warning and retrying, blue for in progress, and slate for cancelled. Violet keeps warnings well clear of the brand's amber. Every status also has an icon and a label, so colour is never the only signal.
 - **Status containers:** each status has a dark tinted background for chips, made by mixing 16% of the status colour into the content surface.
@@ -148,7 +148,7 @@ The layout follows the master-detail model, as in large cloud consoles, with one
 
 - **Global sidebar:** the recessed frame on the left. It holds the workspace switcher, then Flows, Runs, Agents, Audit, and Settings, with an icon and a label each.
 - **List:** the section's items, such as runs or agents, with filters above them.
-- **Opened item:** selecting an item opens it next to the list. It has its own **resource menu**, such as Overview, Versions, Runs, and Settings for a flow, or Overview, Deliveries, Identity, and Activity for an agent.
+- **Opened item:** selecting an item opens it next to the list. Its sections are **tabs** across the top of its content, such as Overview, Canvas, Versions, and Runs for a flow, or Overview, Deliveries, Identity, and Activity for an agent. Tabs keep the content at full width, where a vertical menu would spend a column on a few short labels.
 - **One deeper level:** an item inside an opened item, such as a delivery inside a run, opens in a **panel** on the right, with breadcrumbs. There's never a second panel. Going deeper replaces the panel's content.
 - **Addresses:** every list, item, and panel has its own address, so links can be shared and the browser's back button always works.
 
@@ -178,7 +178,7 @@ spacing:
   sidebar: 232px
   sidebar-collapsed: 56px
   list-pane: 360px
-  resource-menu: 200px
+  tab-bar: 40px
   panel: 440px
   panel-dock-min-viewport: 1600px
   measure-ch: 72
@@ -193,7 +193,7 @@ Shadows are used only for things that float above the page: menus, dialogs, tool
 **Interaction states** stay inside the same language:
 
 - **Hover:** the item lifts one surface step.
-- **Selected:** the item lifts two surface steps and gets a 2px amber edge on its leading side.
+- **Selected:** the item lifts two surface steps and gets a 2px amber edge on its leading side: the left for items in a list, and the bottom for tabs.
 - **Keyboard focus:** a 2px amber ring with a 2px offset, always visible. It's never removed, and never replaced by a hover style.
 - **Disabled:** the muted text colour, with no hover or selected state.
 
@@ -263,15 +263,19 @@ components:
     textColor: "{colors.on-surface-muted}"
     typography: "{typography.label-sm}"
     height: 28px
-  resource-menu-item:
+  tab:
     backgroundColor: "{colors.surface-detail}"
     textColor: "{colors.on-surface-muted}"
     typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
-    height: 32px
-  resource-menu-item-selected:
-    backgroundColor: "{colors.surface-floating}"
+    height: 40px
+    padding: 12px
+  tab-hover:
+    backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.on-surface}"
+  tab-selected:
+    backgroundColor: "{colors.surface-detail}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-md-strong}"
   panel:
     backgroundColor: "{colors.surface-floating}"
     textColor: "{colors.on-surface}"

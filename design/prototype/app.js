@@ -79,6 +79,13 @@
   function codeBlock(text) {
     return h("div", { class: "code-block" }, h("code", {}, text), copyButton(text, "Copy the command"));
   }
+  // Tabs across the top of an opened item: Azure-style sections, laid out
+  // horizontally so the content keeps the full width.
+  function tabBar(label, base, tabs, current) {
+    return h("nav", { class: "tabs", "aria-label": label },
+      tabs.map(([k, l, n]) => h("a", { class: "tab", href: base + k, "aria-current": current === k ? "page" : null },
+        l, n != null ? h("span", { class: "count muted" }, n) : null)));
+  }
   const flowById = (id) => M.flows.find((f) => f.id === id);
   const runById = (id) => M.runs.find((r) => r.id === id);
   const agentById = (id) => M.agents.find((a) => a.id === id);
@@ -146,9 +153,7 @@
     const flow = flowById(run.flow);
     const c = counts(run);
     const tabs = [["deliveries", "Deliveries", run.deliveries.length], ["overview", "Overview"], ["evidence", "Evidence"], ["activity", "Activity"]];
-    const menu = h("nav", { class: "resource-menu", "aria-label": "Run" },
-      h("div", { class: "rm-head" }, h("span", { class: "t-label-sm muted" }, "Run"), h("span", { class: "mono" }, shortId(run.id))),
-      tabs.map(([k, l, n]) => h("a", { class: "rm-item", href: "#runs/" + run.id + "/" + k, "aria-current": tab === k ? "page" : null }, l, n != null ? h("span", { class: "count muted" }, n) : null)));
+    const menu = tabBar("Run", "#runs/" + run.id + "/", tabs, tab);
     const head = h("div", { class: "content-head" },
       h("h2", { class: "t-headline-md" }, flow.name), chip(run.status),
       h("div", { class: "actions" },
@@ -300,9 +305,7 @@
   function flowItem(flow, tab) {
     tab = tab || "overview";
     const tabs = [["overview", "Overview"], ["canvas", "Canvas"], ["versions", "Versions"], ["runs", "Runs"]];
-    const menu = h("nav", { class: "resource-menu", "aria-label": "Flow" },
-      h("div", { class: "rm-head" }, h("span", { class: "t-label-sm muted" }, "Flow"), h("span", {}, flow.name)),
-      tabs.map(([k, l]) => h("a", { class: "rm-item", href: "#flows/" + flow.id + "/" + k, "aria-current": tab === k ? "page" : null }, l)));
+    const menu = tabBar("Flow", "#flows/" + flow.id + "/", tabs, tab);
     const head = h("div", { class: "content-head" }, h("h2", { class: "t-headline-md" }, flow.name), chip(flow.status === "approved" ? "approved" : "draft"),
       h("div", { class: "actions" }, h("button", { class: "btn btn-primary", type: "button" }, icon("play"), "Start a run")));
     let body;
@@ -362,9 +365,7 @@
   function agentItem(agent, tab) {
     tab = tab || "overview";
     const tabs = [["overview", "Overview"], ["deliveries", "Deliveries"], ["identity", "Identity"], ["activity", "Activity"]];
-    const menu = h("nav", { class: "resource-menu", "aria-label": "Agent" },
-      h("div", { class: "rm-head" }, h("span", { class: "t-label-sm muted" }, "Agent"), h("span", {}, agent.name)),
-      tabs.map(([k, l]) => h("a", { class: "rm-item", href: "#agents/" + agent.id + "/" + k, "aria-current": tab === k ? "page" : null }, l)));
+    const menu = tabBar("Agent", "#agents/" + agent.id + "/", tabs, tab);
     const parts = [];
     if (agent.status === "pending") {
       parts.push(h("div", { class: "callout" },

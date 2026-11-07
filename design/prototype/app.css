@@ -250,23 +250,42 @@ kbd { font: 400 11px/1 var(--font-mono); padding: 3px 5px; border-radius: var(--
 .list-item .li-sub { grid-column: 2 / 4; color: var(--color-on-surface-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-item .li-meta { color: var(--color-on-surface-muted); font-size: 12px; }
 
-.item { display: grid; grid-template-columns: var(--spacing-resource-menu) minmax(0, 1fr); min-width: 0; background: var(--color-surface-detail); }
-.resource-menu { padding: var(--spacing-md) var(--spacing-sm); display: grid; gap: var(--spacing-xxs); align-content: start; }
-.resource-menu .rm-head { padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm); display: grid; gap: var(--spacing-xxs); }
-.rm-item {
+/* An opened item: tabs across the top, then its content at full width. */
+.item { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--color-surface-content); }
+.tabs {
+  display: flex;
+  gap: var(--spacing-xxs);
+  padding: 0 var(--spacing-lg);
+  background: var(--color-surface-detail);
+  flex: none;
+  overflow-x: auto;
+}
+.tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  height: var(--spacing-row);
-  padding: 0 var(--spacing-sm);
-  border-radius: var(--rounded-sm);
+  height: var(--spacing-tab-bar);
+  padding: 0 var(--spacing-md);
   color: var(--color-on-surface-muted);
+  white-space: nowrap;
   transition: background var(--dur-fast) var(--ease-in), color var(--dur-fast) var(--ease-in);
 }
-.rm-item:hover { background: var(--color-surface-raised); color: var(--color-on-surface); }
-.rm-item[aria-current="page"] { background: var(--color-surface-floating); color: var(--color-on-surface); box-shadow: inset 2px 0 var(--color-primary); }
-.rm-item .count { margin-left: auto; font-size: 12px; }
-.content { background: var(--color-surface-content); overflow: auto; padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-xxl); display: grid; gap: var(--spacing-xl); align-content: start; min-width: 0; }
+.tab:hover { background: var(--color-surface-raised); color: var(--color-on-surface); }
+.tab[aria-current="page"] { color: var(--color-on-surface); font-weight: 500; }
+/* The selected tab's accent edge sits on its bottom, where a horizontal tab leads. */
+.tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: var(--spacing-sm);
+  right: var(--spacing-sm);
+  bottom: 0;
+  height: 2px;
+  border-radius: var(--rounded-sm) var(--rounded-sm) 0 0;
+  background: var(--color-primary);
+}
+.tab .count { font-size: 12px; font-weight: 400; }
+.content { flex: 1; min-height: 0; background: var(--color-surface-content); overflow: auto; padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-xxl); display: grid; gap: var(--spacing-xl); align-content: start; min-width: 0; }
 /* Grid items keep their content's minimum width unless told otherwise, so a
    wide table would push the page past the window. */
 .content > *,
