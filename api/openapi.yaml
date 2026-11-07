@@ -526,17 +526,17 @@ components:
           type: boolean
     FlowDefinition:
       type: object
-      description: The flow's tree of cards. The card schema is settled during M2.
+      description: |
+        The flow's tree of cards. The orchestrator adds the flow's ID, workspace, version number, and agents to make the
+        payload an administrator approves, defined in `flow-version.schema.json`. See ADR 0022.
+      additionalProperties: false
       required: [schema_version, cards]
       properties:
         schema_version:
           type: integer
           const: 1
         cards:
-          type: array
-          maxItems: 200
-          items:
-            type: object
+          $ref: './flow-version.schema.json#/$defs/cards'
     FlowVersion:
       type: object
       required: [flow_id, version, status, definition]

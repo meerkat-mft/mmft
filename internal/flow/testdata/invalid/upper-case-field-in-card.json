@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "flow_id": "0190f9c3-2b7d-7e01-8000-0000000000f1",
+  "workspace": "finance",
+  "flow_version": 4,
+  "agents": [
+    "0190f9c3-2b7d-7e01-8000-00000000000a",
+    "0190f9c3-2b7d-7e01-8000-00000000000b",
+    "0190f9c3-2b7d-7e01-8000-00000000000c"
+  ],
+  "cards": [
+    {
+      "id": "pickup",
+      "type": "source",
+      "agent": "0190f9c3-2b7d-7e01-8000-00000000000a",
+      "path": "/srv/outbox"
+    },
+    {
+      "id": "ledger",
+      "type": "destination",
+      "parent": "pickup",
+      "agent": "0190f9c3-2b7d-7e01-8000-00000000000b",
+      "Path": "/srv/inbox"
+    },
+    {
+      "id": "archive",
+      "type": "destination",
+      "parent": "pickup",
+      "agent": "0190f9c3-2b7d-7e01-8000-00000000000c",
+      "path": "/srv/archive"
+    }
+  ]
+}
