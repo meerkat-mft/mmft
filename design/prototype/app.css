@@ -377,7 +377,7 @@ kbd { font: 400 11px/1 var(--font-sans); padding: var(--spacing-xs); border-radi
 .summary .headline.calm .t-display-sm { color: var(--color-on-surface); }
 .ratio { display: flex; gap: var(--spacing-xs); height: 8px; }
 .ratio span { border-radius: var(--rounded-full); transition: flex-grow var(--dur-slow) var(--ease-in); min-width: 8px; }
-.ratio [data-tone="success"] { background: var(--color-on-surface-muted); }
+.ratio [data-tone="success"] { background: var(--color-success); }
 .ratio [data-tone="warning"] { background: var(--color-warning); }
 .ratio [data-tone="error"] { background: var(--color-error); }
 .ratio [data-tone="info"] { background: var(--color-info); }
@@ -399,6 +399,8 @@ tbody tr[aria-selected="true"] td { background: var(--color-surface-selected); }
 tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 var(--color-primary); }
 td.num, th.num { text-align: right; }
 td.file { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+td.file a { border-radius: var(--rounded-chip); }
+td.file a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .gone { color: var(--color-on-surface-muted); font-style: italic; }
 
 /* ---- Facts, callouts, code, and timelines ---- */

@@ -5,12 +5,12 @@
   --color-on-primary: #1a1208;
   --color-surface-base: #0b111a;
   --color-surface-recessed: #0f1724;
-  --color-surface-card: #141e2d;
-  --color-surface-hover: #192637;
-  --color-surface-selected: #1f2e42;
-  --color-surface-floating: #26374e;
+  --color-surface-card: #192637;
+  --color-surface-hover: #1f2e42;
+  --color-surface-selected: #26374e;
+  --color-surface-floating: #2d4059;
   --color-on-surface: #e6ecf4;
-  --color-on-surface-muted: #97a8c0;
+  --color-on-surface-muted: #9daec6;
   --color-success: #4cc38a;
   --color-error: #ff7378;
   --color-warning: #b0a0ff;

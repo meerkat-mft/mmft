@@ -39,7 +39,7 @@ Every colour comes from the logo's navy (`#14202E`) and its amber (`#E2A04A`). T
   - **Floating:** menus, dialogs, tooltips, and the panel when it overlays the page.
 - **Text:** a cool off-white for primary text, and a muted blue-grey for metadata and labels.
 - **Status:** green for succeeded, red for failed, violet for warning and retrying, blue for in progress, and slate for cancelled. Violet keeps warnings well clear of the brand's amber. Every status also has an icon and a label, so colour is never the only signal.
-- **Colour marks what needs attention.** A status colour goes on the status icon only. The label beside it stays in the primary text colour, and there are no tinted backgrounds. Evidence marks and summary bars stay neutral where things went well, so a page of successes reads calm and a failure is the first colour the eye finds.
+- **Colour marks what needs attention.** A status colour goes on the status icon only. The label beside it stays in the primary text colour, and there are no tinted backgrounds. Evidence marks stay neutral where things went well, so a page of successes reads calm and a failure is the first colour the eye finds. The one exception is a summary bar, such as a run's delivery ratio: every part keeps its status colour, because a grey part reads as work still to do.
 
 Every text colour below is at least 4.5:1 against every surface on the ladder. Every status colour is at least 3:1 against every surface for icons and marks.
 
@@ -50,12 +50,12 @@ colors:
   on-primary: "#1A1208"
   surface-base: "#0B111A"
   surface-recessed: "#0F1724"
-  surface-card: "#141E2D"
-  surface-hover: "#192637"
-  surface-selected: "#1F2E42"
-  surface-floating: "#26374E"
+  surface-card: "#192637"
+  surface-hover: "#1F2E42"
+  surface-selected: "#26374E"
+  surface-floating: "#2D4059"
   on-surface: "#E6ECF4"
-  on-surface-muted: "#97A8C0"
+  on-surface-muted: "#9DAEC6"
   success: "#4CC38A"
   error: "#FF7378"
   warning: "#B0A0FF"
@@ -200,7 +200,7 @@ spacing:
 
 ## Elevation & Depth
 
-There is **one base layer**, and the work floats on it as cards. A card is one clear step lighter than the base, with no border and no shadow. Inside a card, things are separated by space, not lines: rows have no fill at rest, and groups are set apart by the 8-point gaps. Avoid putting cards inside cards. A recessed well, a step darker than the card, holds inputs, code blocks, and the flow canvas.
+There is **one base layer**, and the work floats on it as cards. A card is two steps lighter than the base, about 1.25:1, so cards stay distinct on a dim or uncalibrated office monitor, with no border and no shadow. Inside a card, things are separated by space, not lines: rows have no fill at rest, and groups are set apart by the 8-point gaps. Avoid putting cards inside cards. A recessed well, a step darker than the card, holds inputs, code blocks, and the flow canvas.
 
 Shadows are used only for things that float above the page: menus, dialogs, tooltips, and the panel when it overlays the page at 1080p. Floating layers use the floating surface, a soft shadow (`0 8px 24px` in the scrim colour at 45%), and a scrim behind modal dialogs.
 
@@ -441,7 +441,7 @@ WCAG 2.2 AA is a hard rule, built into these tokens rather than fixed screen by 
 - Do use amber once per screen, for the main action, plus the selected item's edge and the focus ring. Don't use it for status, charts, or decoration.
 - Do separate areas with space and surface steps. Don't reach for borders, dividers, or boxes around everything.
 - Do pair every status colour with its icon and label. Don't rely on colour alone.
-- Do keep status colour on the icon. Don't tint chip backgrounds or colour the labels, evidence, or summary bars of things that went well.
+- Do keep status colour on the icon. Don't tint chip backgrounds or colour the labels or evidence of things that went well. A summary bar is the exception: every part keeps its colour.
 - Do show IDs, hashes, error codes, and commands in the mono face, and make them easy to copy.
 - Do nest corners: 12px for cards, 8px for anything inside them, and 6px for chips. Don't round anything more for emphasis.
 - Do keep every padding, margin, gap, and height on the 8-point grid. Use 4px only inside a component.

@@ -44,9 +44,9 @@
     draft: ["info", "clock", "Draft"],
     cancelled: ["cancelled", "ban", "Cancelled"],
   };
-  function chip(status, changed) {
-    const [tone, ic, label] = STATUS[status];
-    return h("span", { class: "chip" + (changed ? " changed" : ""), data: { tone } }, icon(ic), label);
+  function chip(status, changed, label) {
+    const [tone, ic, name] = STATUS[status];
+    return h("span", { class: "chip" + (changed ? " changed" : ""), data: { tone } }, icon(ic), label || name);
   }
   function statusIcon(status) {
     const [tone, ic, label] = STATUS[status];
@@ -182,18 +182,23 @@
     // What needs attention leads; successes recede below it.
     const order = { failed: 0, retry_wait: 1, transferring: 2, succeeded: 3 };
     const rows = [...run.deliveries].sort((a, b) => order[a.status] - order[b.status]);
-    const row = (d) => h("tr", {
-      "aria-selected": String(d.id === selected), tabindex: "0", data: { key: d.id },
-      onclick: () => { location.hash = "#runs/" + run.id + "/deliveries/" + d.id; },
-      onkeydown: (e) => { if (e.key === "Enter") location.hash = "#runs/" + run.id + "/deliveries/" + d.id; },
-    },
+    // The file name is a real link to the delivery's address, so it can be
+    // read by a screen reader and opened in a new tab. The whole row still
+    // opens it on a plain click.
+    const row = (d) => {
+      const href = "#runs/" + run.id + "/deliveries/" + d.id;
+      return h("tr", {
+        "aria-selected": String(d.id === selected),
+        onclick: (e) => { if (!(e.metaKey || e.ctrlKey || e.shiftKey)) location.hash = href; },
+      },
       h("td", {}, chip(d.status, d.changed)),
-      h("td", { class: "file" }, fileName(d.file)),
+      h("td", { class: "file" }, h("a", { href, data: { key: d.id }, "aria-label": d.file == null ? "Delivery " + d.id + ", name deleted by retention" : null }, fileName(d.file))),
       h("td", { class: "muted" }, d.from, " → ", d.to),
       h("td", { class: "num muted" }, d.size),
       h("td", {}, evidence(d.evidence, d.changed)),
       h("td", { class: "muted" }, d.error ? h("span", { class: "mono" }, d.error) : null,
         d.progress != null && d.status === "transferring" ? h("div", { class: "progress", id: "progress-" + d.id }, (() => { const s = h("span"); s.style.width = Math.round(d.progress * 100) + "%"; return s; })()) : null));
+    };
     const table = h("div", { class: "table-wrap" }, h("table", {},
       h("thead", {}, h("tr", {}, ["Status", "File", "Route", "Size", "Evidence", "Error"].map((t, i) => h("th", { class: "t-label-sm" + (i === 3 ? " num" : "") }, t)))),
       h("tbody", {}, rows.map(row))));
@@ -297,7 +302,7 @@
     tab = tab || "overview";
     const tabs = [["overview", "Overview"], ["canvas", "Canvas"], ["versions", "Versions"], ["runs", "Runs"]];
     const menu = tabBar("Flow", "#flows/" + flow.id + "/", tabs, tab);
-    const head = h("div", { class: "content-head" }, h("h2", { class: "t-headline-md" }, flow.name), chip(flow.status === "approved" ? "approved" : "draft"),
+    const head = h("div", { class: "content-head" }, h("h2", { class: "t-headline-md" }, flow.name), chip(flow.status === "approved" ? "approved" : "draft", false, "Version " + flow.version + (flow.status === "approved" ? " approved" : " draft")),
       h("div", { class: "actions" }, h("button", { class: "btn btn-primary", type: "button" }, icon("play"), "Start a run")));
     let body;
     if (tab === "canvas" && flow.tree) body = canvas(flow.tree);
