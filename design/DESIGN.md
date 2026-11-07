@@ -161,7 +161,7 @@ The layout follows the master-detail model, as in large cloud consoles, with one
 
 **Spacing follows the 8-point grid.** Every padding, margin, gap, and control height is a multiple of 8. 4px is allowed only for fine adjustments inside a component, such as between an icon and its label. Using one small set of distances everywhere is what makes the layout feel calm and deliberate.
 
-- **Between cards, and around the window's edge:** 8px.
+- **Between cards, and around the window's edge:** 16px.
 - **Inside a card:** 16px of padding for the list and the panel, and 24px for the opened item's content.
 - **Inside content:** 16px between groups, and 8px within a group.
 - **Heights:** 32px for rows, buttons, and inputs. 40px for tabs. 48px for the top bar.
@@ -184,7 +184,7 @@ spacing:
   xl: 32px
   xxl: 48px
   xxxl: 64px
-  gap: 8px
+  gap: 16px
   card-padding: 16px
   content-padding: 24px
   row: 32px
