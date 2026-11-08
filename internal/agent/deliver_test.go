@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	agentv1 "mmft.dev/mmft/gen/agent/v1"
+	"mmft.dev/mmft/internal/allowlist"
 	"mmft.dev/mmft/internal/relay"
 	"mmft.dev/mmft/internal/seal"
 	"mmft.dev/mmft/internal/server"
@@ -43,6 +44,25 @@ type labAgent struct {
 	outbox, inbox, spool string
 	identity             []byte
 	state                State
+	allowlist            *allowlist.Allowlist
+}
+
+// allow parses an allowlist for a test, closed when the test ends.
+func allow(t *testing.T, doc string) *allowlist.Allowlist {
+	t.Helper()
+	a, err := allowlist.Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.Close)
+	return a
+}
+
+// labAllowlist allows the agent's outbox and inbox, and every agent in the
+// lab workspace.
+func labAllowlist(t *testing.T, outbox, inbox string) *allowlist.Allowlist {
+	t.Helper()
+	return allow(t, fmt.Sprintf("version: 1\napprovals: 1\nread: [%s]\nwrite: [%s]\nsend_to: [{workspace: lab}]\nreceive_from: [{workspace: lab}]\n", outbox, inbox))
 }
 
 func startDeliveryLab(t *testing.T) *deliveryLab {
@@ -97,6 +117,7 @@ func startDeliveryLab(t *testing.T) *deliveryLab {
 func (l *deliveryLab) approve(t *testing.T, name string) *labAgent {
 	t.Helper()
 	a := &labAgent{name: name, dir: agentDir(t), outbox: t.TempDir(), inbox: t.TempDir(), spool: t.TempDir()}
+	a.allowlist = labAllowlist(t, a.outbox, a.inbox)
 	in := install(l.o, l.o.Token(t, "lab", name), name)
 	in.RootFingerprint = l.ap.RootFingerprint()
 	s, err := enroll(t, a.dir, in)
@@ -119,7 +140,7 @@ func (a *labAgent) run(t *testing.T) {
 	go func() {
 		done <- Run(ctx, a.dir, RunConfig{
 			Heartbeat: 50 * time.Millisecond, MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
-			Outbox: a.outbox, Inbox: a.inbox, Spool: a.spool,
+			Outbox: a.outbox, Inbox: a.inbox, Spool: a.spool, Allowlist: a.allowlist,
 		})
 	}()
 	t.Cleanup(func() {
@@ -245,7 +266,7 @@ func (a *labAgent) side(t *testing.T) *runner {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := RunConfig{Outbox: a.outbox, Inbox: a.inbox, Spool: a.spool}
+	cfg := RunConfig{Outbox: a.outbox, Inbox: a.inbox, Spool: a.spool, Allowlist: a.allowlist}
 	cfg.defaults()
 	return newRunner(a.dir, cfg, a.state, keys)
 }
@@ -387,7 +408,8 @@ func TestRunNeedsUsableDeliveryDirectories(t *testing.T) {
 	if err := (&RunConfig{Outbox: dir, Inbox: dir, Spool: t.TempDir()}).checkDirs(); !errors.Is(err, ErrDeliveryDirs) {
 		t.Errorf("shared outbox and inbox: got %v", err)
 	}
-	if err := (&RunConfig{Outbox: t.TempDir(), Inbox: t.TempDir(), Spool: dir}).checkDirs(); err != nil {
+	outbox, inbox := t.TempDir(), t.TempDir()
+	if err := (&RunConfig{Outbox: outbox, Inbox: inbox, Spool: dir, Allowlist: labAllowlist(t, outbox, inbox)}).checkDirs(); err != nil {
 		t.Fatal(err)
 	}
 	if err := (&RunConfig{}).checkDirs(); err != nil {
@@ -395,8 +417,89 @@ func TestRunNeedsUsableDeliveryDirectories(t *testing.T) {
 	}
 }
 
+func TestRunNeedsItsDirectoriesInTheAllowlist(t *testing.T) {
+	outbox, inbox, spool := t.TempDir(), t.TempDir(), t.TempDir()
+	for name, cfg := range map[string]RunConfig{
+		"no allowlist":               {Outbox: outbox, Inbox: inbox, Spool: spool},
+		"empty allowlist":            {Outbox: outbox, Spool: spool, Allowlist: allow(t, "")},
+		"outbox only writable":       {Outbox: outbox, Spool: spool, Allowlist: labAllowlist(t, inbox, outbox)},
+		"inbox only readable":        {Inbox: inbox, Spool: spool, Allowlist: labAllowlist(t, inbox, outbox)},
+		"spool inside the allowlist": {Outbox: outbox, Spool: spool, Allowlist: labAllowlist(t, filepath.Dir(spool), inbox)},
+	} {
+		if err := cfg.checkDirs(); !errors.Is(err, ErrDirsNotAllowed) {
+			t.Errorf("%s: got %v", name, err)
+		}
+	}
+	// With no outbox or inbox, the agent takes no deliveries and needs
+	// nothing from the allowlist.
+	if err := (&RunConfig{}).checkDirs(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeliveriesNeedTheAllowlist(t *testing.T) {
+	l := startDeliveryLab(t)
+	a, b := l.agents["agent-a"], l.agents["agent-b"]
+	if err := os.WriteFile(filepath.Join(a.outbox, "f"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	send := &agentv1.ManualDelivery{DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_SEND, FileName: "f", PeerAgentId: b.id, PeerIdentityStatement: b.identity}
+	keys, err := LoadKeys(a.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := seal.SignManifest(seal.Delivery{DeliveryID: testDelivery, SourceAgent: a.id, DestinationAgent: b.id},
+		seal.Sealed{Size: 100, SHA256: [32]byte{1}}, keys.Signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, _ := json.Marshal(e)
+	receive := &agentv1.ManualDelivery{DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: "f",
+		PeerAgentId: a.id, PeerIdentityStatement: a.identity, ManifestStatement: manifest}
+
+	other := "0190a0b0-0000-7000-8000-000000000009"
+	for name, tc := range map[string]struct {
+		source, destination *allowlist.Allowlist
+		code                string
+	}{
+		"no allowlist": {nil, nil, codePeerNotAllowed},
+		"empty":        {allow(t, ""), allow(t, ""), codePeerNotAllowed},
+		"another peer": {
+			allow(t, fmt.Sprintf("version: 1\napprovals: 1\nread: [%s]\nsend_to: [{agent: %s}, {workspace: other}]\n", a.outbox, other)),
+			allow(t, fmt.Sprintf("version: 1\napprovals: 1\nwrite: [%s]\nreceive_from: [{agent: %s}, {workspace: other}]\n", b.inbox, other)),
+			codePeerNotAllowed,
+		},
+		"peer allowed the other way only": {
+			allow(t, fmt.Sprintf("version: 1\napprovals: 1\nread: [%s]\nreceive_from: [{workspace: lab}]\n", a.outbox)),
+			allow(t, fmt.Sprintf("version: 1\napprovals: 1\nwrite: [%s]\nsend_to: [{workspace: lab}]\n", b.inbox)),
+			codePeerNotAllowed,
+		},
+		"directory not allowed": {
+			allow(t, fmt.Sprintf("version: 1\napprovals: 1\nwrite: [%s]\nsend_to: [{agent: %s}]\n", a.outbox, b.id)),
+			allow(t, fmt.Sprintf("version: 1\napprovals: 1\nread: [%s]\nreceive_from: [{agent: %s}]\n", b.inbox, a.id)),
+			codePathNotAllowed,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			src, dst := a.side(t), b.side(t)
+			src.cfg.Allowlist, dst.cfg.Allowlist = tc.source, tc.destination
+			wantCode(t, src.sendSide(quick(t), clone(send)), tc.code)
+			_, err := dst.receiveSide(quick(t), clone(receive))
+			wantCode(t, err, tc.code)
+			empty(t, a.spool)
+			empty(t, b.spool)
+			empty(t, b.inbox)
+		})
+	}
+}
+
 func TestPlaceNeverReplacesAFile(t *testing.T) {
 	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
 	opened := filepath.Join(dir, ".opened")
 	write := func(path, data string) {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
@@ -406,7 +509,7 @@ func TestPlaceNeverReplacesAFile(t *testing.T) {
 	write(opened, "new")
 	existing := filepath.Join(dir, "existing")
 	write(existing, "old")
-	wantCode(t, place(opened, existing), codeDestinationExists)
+	wantCode(t, place(root, ".opened", "existing"), codeDestinationExists)
 	if got, _ := os.ReadFile(existing); string(got) != "old" {
 		t.Fatalf("the existing file changed to %q", got)
 	}
@@ -417,12 +520,12 @@ func TestPlaceNeverReplacesAFile(t *testing.T) {
 	if err := os.Symlink(target, planted); err != nil {
 		t.Fatal(err)
 	}
-	wantCode(t, place(opened, planted), codeDestinationExists)
+	wantCode(t, place(root, ".opened", "planted"), codeDestinationExists)
 	if got, _ := os.ReadFile(target); string(got) != "elsewhere" {
 		t.Fatalf("the link's target changed to %q", got)
 	}
 	fresh := filepath.Join(dir, "fresh")
-	if err := place(opened, fresh); err != nil {
+	if err := place(root, ".opened", "fresh"); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(fresh); string(got) != "new" {
@@ -609,7 +712,7 @@ func TestRunWaitsForItsDeliveries(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, b.dir, RunConfig{MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
-			Inbox: b.inbox, Spool: b.spool})
+			Inbox: b.inbox, Spool: b.spool, Allowlist: b.allowlist})
 	}()
 	// Wait until the receive holds its spool file.
 	deadline := time.Now().Add(10 * time.Second)

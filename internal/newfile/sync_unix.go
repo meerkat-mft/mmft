@@ -16,3 +16,13 @@ func SyncDir(dir string) error {
 	defer func() { _ = d.Close() }()
 	return d.Sync()
 }
+
+// SyncRoot is SyncDir for a directory opened as a root.
+func SyncRoot(root *os.Root) error {
+	d, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Sync()
+}

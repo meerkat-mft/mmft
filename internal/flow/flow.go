@@ -219,7 +219,7 @@ func (v *Version) validateCards() error {
 		if !trust.ValidAgentID(c.Agent) {
 			return fail(f+".agent", "a %s card needs a valid agent ID", c.Type)
 		}
-		if err := checkPath(c.Path); err != nil {
+		if err := CheckPath(c.Path); err != nil {
 			return fail(f+".path", "%v", err)
 		}
 	}
@@ -327,11 +327,11 @@ func (v *Version) validateAgents() error {
 	return nil
 }
 
-// checkPath requires an absolute path in its one canonical form: a POSIX path,
+// CheckPath requires an absolute path in its one canonical form: a POSIX path,
 // or a Windows path on a drive. Anything that two systems or two readers could
 // take differently is refused, so the path an administrator approves is the
 // path that runs. Whether the agent may use it is the allowlist's decision.
-func checkPath(p string) error {
+func CheckPath(p string) error {
 	if p == "" {
 		return errors.New("a card needs a path")
 	}

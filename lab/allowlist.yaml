@@ -1,0 +1,13 @@
+# The lab agents' allowlist, baked into the image as root's file. Both agents
+# use the same paths, and may send to and receive from any agent in the lab
+# workspace. The spool stays outside it.
+version: 1
+read:
+  - /var/lib/mmft/outbox
+write:
+  - /var/lib/mmft/inbox
+send_to:
+  - workspace: lab
+receive_from:
+  - workspace: lab
+approvals: 1

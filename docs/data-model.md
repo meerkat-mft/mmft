@@ -18,7 +18,7 @@ This describes what the orchestrator stores and why, for Postgres 18. Terms foll
 | `enrollment_tokens` | One-use enrollment tokens, stored as hashes | Used once | Delete soon after expiry |
 | `agents` | One row per agent | Status changes | Life of the agent |
 | `agent_identities` | Each agent's keys and identity statements over time | Revoked, never edited | Kept with audit evidence |
-| `agent_presence` | Last contact and version | Constantly | Life of the agent |
+| `agent_presence` | Last contact, version, and allowlist hash | Constantly | Life of the agent |
 | `signed_statements` | Every signed statement, as received | Never | Kept with audit evidence |
 | `flows` | One row per flow: its workspace and name | Rarely | Life of the install |
 | `flow_versions` | Each version's exact payload, its status, and its approval | Status changes, payload never | Kept with audit evidence |
@@ -88,7 +88,7 @@ At the ceiling, `deliveries` holds about 400 million rows, plus indexes. Most in
 
 Partitioning `deliveries` by month is the planned path, once real volumes need it. It requires a change of primary key, because a partition key must be part of the primary key. That needs a planned migration of existing rows, and references to `deliveries` must change at the same time.
 
-`agent_presence` is kept apart so that heartbeats don't rewrite rows holding keys. It uses a lower fill factor, so updates can stay on the same page.
+`agent_presence` is kept apart so that heartbeats don't rewrite rows holding keys. It uses a lower fill factor, so updates can stay on the same page. Each hello also records the SHA-256 of the agent's allowlist, `allowlist_sha256`, so a changed allowlist shows on the orchestrator ([ADR 0024](adr/0024-allowlist-file-and-enforcement.md)). It records only the hash, never the allowlist's contents.
 
 ## Still to design
 

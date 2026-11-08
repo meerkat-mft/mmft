@@ -11,6 +11,7 @@ package seal
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,7 +20,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 
 	"filippo.io/age"
@@ -265,15 +265,15 @@ func VerifyManifest(data []byte, source statement.Verifier, want Delivery) (Mani
 }
 
 // Open checks a spooled sealed file against a verified manifest and only then
-// decrypts it to a new temporary file in destDir, which it returns. The caller
-// gives the file its final name. A changed, truncated, or swapped sealed file is
-// never decrypted.
-func Open(sealedPath string, m Manifest, identity *age.HybridIdentity, destDir string) (string, error) {
+// decrypts it to a new temporary file in dest, whose name it returns. The
+// caller gives the file its final name in dest. A changed, truncated, or
+// swapped sealed file is never decrypted.
+func Open(sealedPath string, m Manifest, identity *age.HybridIdentity, dest *os.Root) (string, error) {
 	if identity == nil {
 		return "", errors.New("seal: no identity")
 	}
-	path, err := open(sealedPath, m, identity, destDir)
-	return path, pathless(err)
+	name, err := open(sealedPath, m, identity, dest)
+	return name, pathless(err)
 }
 
 // pathless removes the file path from an error, because a path can hold a
@@ -287,7 +287,7 @@ func pathless(err error) error {
 	return err
 }
 
-func open(sealedPath string, m Manifest, identity age.Identity, destDir string) (path string, err error) {
+func open(sealedPath string, m Manifest, identity age.Identity, dest *os.Root) (name string, err error) {
 	want, err := hex.DecodeString(m.SealedSHA256)
 	if err != nil || len(want) != sha256.Size {
 		return "", ErrInvalidManifest
@@ -312,14 +312,19 @@ func open(sealedPath string, m Manifest, identity age.Identity, destDir string) 
 	}
 	afterHashCheck()
 
-	out, err := os.CreateTemp(destDir, ".mmft-*.partial")
+	var random [8]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	temp := ".mmft-" + hex.EncodeToString(random[:]) + ".partial"
+	out, err := dest.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", err
 	}
 	defer func() {
 		if err != nil {
 			_ = out.Close()
-			_ = os.Remove(out.Name())
+			_ = dest.Remove(temp)
 		}
 	}()
 	// Hash the bytes again as age reads them, so a sealed file that changes
@@ -345,7 +350,7 @@ func open(sealedPath string, m Manifest, identity age.Identity, destDir string) 
 	if err := out.Close(); err != nil {
 		return "", err
 	}
-	return filepath.Clean(out.Name()), nil
+	return temp, nil
 }
 
 func checkHash(r io.Reader, want []byte) error {

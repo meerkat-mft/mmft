@@ -6,6 +6,7 @@ require (
 	filippo.io/age v1.3.2
 	filippo.io/edwards25519 v1.2.0
 	github.com/jackc/pgx/v5 v5.12.0
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/net v0.60.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
