@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmft.dev/schemas/flow-retirement-v1.json",
+  "title": "Flow retirement payload, version 1",
+  "description": "The payload of a flow retirement statement, application/vnd.mmft.flow-retirement+json;v=1. See ADR 0024. The Go package internal/flow is the authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "flow_id", "workspace"],
+  "properties": {
+    "version": { "const": 1 },
+    "flow_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "workspace": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    }
+  }
+}

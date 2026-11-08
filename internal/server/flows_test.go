@@ -291,3 +291,68 @@ func TestForgedApprovalsAreRefused(t *testing.T) {
 		t.Errorf("missing version: %d", code)
 	}
 }
+
+// retire signs a retirement naming flowID and workspace.
+func (a approver) retire(t *testing.T, flowID, workspace string) []byte {
+	t.Helper()
+	payload, _ := json.Marshal(flow.Retirement{Version: 1, FlowID: flowID, Workspace: workspace})
+	e, err := statement.Sign(statement.TypeFlowRetirement, payload, a.admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a.bundle(t, e, a.cert)
+}
+
+func (l flowLab) flow(t *testing.T, id string) flowItem {
+	t.Helper()
+	code, data := l.do(t, http.MethodGet, "/api/v1/flows/"+id, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get flow: %d %s", code, data)
+	}
+	var f flowItem
+	if err := json.Unmarshal(data, &f); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestRetiredFlowTakesNoDraftsOrApprovals(t *testing.T) {
+	l := newFlowLab(t)
+	f := l.createFlow(t, "invoices-daily")
+	v1 := l.draft(t, f.ID, "/srv/inbox")
+	other := l.createFlow(t, "payroll")
+
+	for name, body := range map[string][]byte{
+		"another flow":      l.retire(t, other.ID, "lab"),
+		"another workspace": l.retire(t, f.ID, "other"),
+		// A flow version statement can't retire a flow.
+		"an approval": l.approve(t, v1.Payload),
+	} {
+		if code, data := l.do(t, http.MethodPut, "/api/v1/flows/"+f.ID+"/retirement", body); code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", name, code, data)
+		}
+	}
+	if l.flow(t, f.ID).Retired {
+		t.Fatal("retired by a refused retirement")
+	}
+
+	retirement := l.retire(t, f.ID, "lab")
+	if code, data := l.do(t, http.MethodPut, "/api/v1/flows/"+f.ID+"/retirement", retirement); code != http.StatusNoContent {
+		t.Fatalf("retire: %d %s", code, data)
+	}
+	if got := l.flow(t, f.ID); !got.Retired || got.LatestVersion == nil || *got.LatestVersion != 1 {
+		t.Errorf("after retirement: %+v", got)
+	}
+	if code, data := l.do(t, http.MethodPut, "/api/v1/flows/"+f.ID+"/retirement", retirement); code != http.StatusNoContent {
+		t.Errorf("retire again: %d %s", code, data)
+	}
+	if code, _ := l.saveDraft(t, f.ID, cards(l.a.id, l.b.id, "/srv/inbox-2")); code != http.StatusConflict {
+		t.Errorf("draft after retirement: %d", code)
+	}
+	if code, _ := l.putApproval(t, f.ID, 1, l.approve(t, v1.Payload)); code != http.StatusConflict {
+		t.Errorf("approval after retirement: %d", code)
+	}
+	if code, _ := l.do(t, http.MethodGet, "/api/v1/flows/0190f9c3-2b7d-7e01-8000-0000000000ff", nil); code != http.StatusNotFound {
+		t.Errorf("unknown flow: %d", code)
+	}
+}

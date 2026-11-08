@@ -160,3 +160,29 @@ func TestApprovalIsDecodedStrictly(t *testing.T) {
 		}
 	}
 }
+
+// An automation key may sign agent identities, never a flow version, even when
+// a verifier trusts it. The key is used through an administrator-role signer
+// here, because the library refuses to sign with the wrong role.
+func TestAutomationKeyCantApproveAFlow(t *testing.T) {
+	auto, err := statement.GenerateSigner(statement.RoleAutomation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ed, ml := auto.Seeds()
+	same, err := statement.NewSigner(statement.RoleAdministrator, ed, ml)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := statement.Sign(statement.TypeFlowVersion, flowPayload, same)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted := []statement.Verifier{{Key: auto.Public(), Role: statement.RoleAutomation, Owner: "ci"}}
+	if _, err := statement.Verify(e, statement.TypeFlowVersion, trusted, 1); !errors.Is(err, statement.ErrNotEnoughSigners) {
+		t.Errorf("automation key on a flow version: %v", err)
+	}
+	if _, err := statement.Sign(statement.TypeFlowVersion, flowPayload, auto); err == nil {
+		t.Error("signed a flow version with an automation key")
+	}
+}

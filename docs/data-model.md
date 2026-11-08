@@ -20,7 +20,7 @@ This describes what the orchestrator stores and why, for Postgres 18. Terms foll
 | `agent_identities` | Each agent's keys and identity statements over time | Revoked, never edited | Kept with audit evidence |
 | `agent_presence` | Last contact and version | Constantly | Life of the agent |
 | `signed_statements` | Every signed statement, as received | Never | Kept with audit evidence |
-| `flows` | One row per flow: its workspace and name | Rarely | Life of the install |
+| `flows` | One row per flow: its workspace, name, and retirement | Rarely | Life of the install |
 | `flow_versions` | Each version's exact payload, its status, and its approval | Status changes, payload never | Kept with audit evidence |
 | `runs` | One row per trigger firing | Until finished | 13 months by default |
 | `deliveries` | One file to one destination | Until finished | 13 months by default |
@@ -30,7 +30,8 @@ This describes what the orchestrator stores and why, for Postgres 18. Terms foll
 workspaces ─┬─ agents ─┬─ agent_identities
             │          └─ agent_presence
             ├─ enrollment_tokens
-            ├─ flows ─── flow_versions ─── signed_statements (approval)
+            ├─ flows ─┬─ flow_versions ─── signed_statements (approval)
+            │         └─ signed_statements (retirement)
             └─ runs ─── deliveries ─┬─ delivery_files
                                     └─ signed_statements (manifest, receipt)
 ```
@@ -57,6 +58,8 @@ A flow belongs to one workspace, and its name is unique there. Its versions are 
 - **At most one version per flow is approved,** enforced by a partial unique index. Newer drafts stay `draft` until they are approved themselves.
 
 The flow's name isn't part of the signed payload, so renaming a flow needs no new approval.
+
+**Retiring a flow** stores its retirement on the `flows` row, exactly as received, with its statement in `signed_statements` and the time, as [ADR 0024](adr/0024-flow-retirement-statement.md) defines. The retirement must name the flow and its workspace. A retired flow takes no new drafts or approvals, and its versions stay as evidence.
 
 ## Personal data and evidence
 

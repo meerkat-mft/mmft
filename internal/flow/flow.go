@@ -94,25 +94,59 @@ func fail(field, format string, a ...any) error {
 // Parse decodes and validates a flow version payload. It returns the first
 // problem it finds as an *Error.
 func Parse(payload []byte) (*Version, error) {
-	if len(payload) > statement.MaxPayloadBytes {
-		return nil, fail("", "payload is larger than %d bytes", statement.MaxPayloadBytes)
-	}
-	if err := checkKeys(payload); err != nil {
-		return nil, err
-	}
 	var v Version
-	dec := json.NewDecoder(bytes.NewReader(payload))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
-		return nil, fail("", "%v", err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, fail("", "trailing data after the payload")
+	if err := decode(payload, &v); err != nil {
+		return nil, err
 	}
 	if err := v.validate(); err != nil {
 		return nil, err
 	}
 	return &v, nil
+}
+
+// Retirement is the payload of a flow retirement statement, as ADR 0024
+// defines. It names the flow and its workspace, and stops the flow for good.
+type Retirement struct {
+	Version   int    `json:"version"`
+	FlowID    string `json:"flow_id"`
+	Workspace string `json:"workspace"`
+}
+
+// ParseRetirement decodes and validates a flow retirement payload, with the
+// same strict decoding as a flow version.
+func ParseRetirement(payload []byte) (*Retirement, error) {
+	var r Retirement
+	if err := decode(payload, &r); err != nil {
+		return nil, err
+	}
+	switch {
+	case r.Version != PayloadVersion:
+		return nil, fail("version", "unsupported payload version %d", r.Version)
+	case !trust.ValidAgentID(r.FlowID):
+		return nil, fail("flow_id", "not a valid ID")
+	case !trust.ValidName(r.Workspace):
+		return nil, fail("workspace", "not a valid workspace name")
+	}
+	return &r, nil
+}
+
+// decode reads one payload object strictly into v.
+func decode(payload []byte, v any) error {
+	if len(payload) > statement.MaxPayloadBytes {
+		return fail("", "payload is larger than %d bytes", statement.MaxPayloadBytes)
+	}
+	if err := checkKeys(payload); err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fail("", "%v", err)
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return fail("", "trailing data after the payload")
+	}
+	return nil
 }
 
 // checkKeys walks the whole payload and requires every field name, at every

@@ -33,6 +33,8 @@ var (
 	errFlowAgents      = apiError{http.StatusBadRequest, "Every agent a flow names must be approved and in the flow's workspace."}
 	errApprovalPayload = apiError{http.StatusBadRequest, "The approval signs a different payload than this version."}
 	errSuperseded      = apiError{http.StatusConflict, "A newer version is already approved."}
+	errRetired         = apiError{http.StatusConflict, "The flow is retired."}
+	errRetirementFlow  = apiError{http.StatusBadRequest, "The retirement names another flow or workspace."}
 )
 
 type flowItem struct {
@@ -41,6 +43,7 @@ type flowItem struct {
 	Workspace       string `json:"workspace"`
 	ApprovedVersion *int   `json:"approved_version,omitempty"`
 	LatestVersion   *int   `json:"latest_version,omitempty"`
+	Retired         bool   `json:"retired"`
 }
 
 // flowSelect reads a flow with its approved and latest version numbers, for
@@ -48,13 +51,14 @@ type flowItem struct {
 const flowSelect = `
 		SELECT f.id, f.name, w.name,
 		       (SELECT version FROM flow_versions WHERE flow_id = f.id AND status = 'approved'),
-		       (SELECT max(version) FROM flow_versions WHERE flow_id = f.id)
+		       (SELECT max(version) FROM flow_versions WHERE flow_id = f.id),
+		       f.retired_at IS NOT NULL
 		FROM flows f
 		JOIN workspaces w ON w.id = f.workspace_id`
 
 func scanFlow(row pgx.Row) (flowItem, error) {
 	var item flowItem
-	err := row.Scan(&item.ID, &item.Name, &item.Workspace, &item.ApprovedVersion, &item.LatestVersion)
+	err := row.Scan(&item.ID, &item.Name, &item.Workspace, &item.ApprovedVersion, &item.LatestVersion, &item.Retired)
 	return item, err
 }
 
@@ -141,6 +145,25 @@ func (s *Server) listFlows(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
+// getFlow returns one flow, in the same form as the listing.
+func (s *Server) getFlow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("flow_id")
+	if !trust.ValidAgentID(id) {
+		problem(w, errNoFlow.code, errNoFlow.title)
+		return
+	}
+	item, err := scanFlow(s.cfg.DB.QueryRow(r.Context(), flowSelect+` WHERE f.id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		problem(w, errNoFlow.code, errNoFlow.title)
+		return
+	}
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not read the flow.")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
 // definition is a flow's tree of cards as the API takes and returns it. The
 // orchestrator adds the rest of the payload.
 type definition struct {
@@ -190,14 +213,18 @@ func (s *Server) createFlowVersion(w http.ResponseWriter, r *http.Request) {
 	var item flowVersionItem
 	err := pgx.BeginFunc(ctx, s.cfg.DB, func(tx pgx.Tx) error {
 		var workspaceID, workspace string
+		var retired bool
 		err := tx.QueryRow(ctx, `
-			SELECT f.workspace_id, w.name FROM flows f JOIN workspaces w ON w.id = f.workspace_id
-			WHERE f.id = $1 FOR UPDATE OF f`, flowID).Scan(&workspaceID, &workspace)
+			SELECT f.workspace_id, w.name, f.retired_at IS NOT NULL FROM flows f JOIN workspaces w ON w.id = f.workspace_id
+			WHERE f.id = $1 FOR UPDATE OF f`, flowID).Scan(&workspaceID, &workspace, &retired)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errNoFlow
 		}
 		if err != nil {
 			return err
+		}
+		if retired {
+			return errRetired
 		}
 		var next int
 		if err := tx.QueryRow(ctx, `SELECT coalesce(max(version), 0) + 1 FROM flow_versions WHERE flow_id = $1`, flowID).Scan(&next); err != nil {
@@ -354,11 +381,16 @@ func (s *Server) putFlowApproval(w http.ResponseWriter, r *http.Request) {
 // storeApproval approves a draft whose payload the approval signs, and
 // supersedes every older version of the flow.
 func storeApproval(ctx context.Context, tx pgx.Tx, flowID string, version int, signed, statementID, envelope, approval []byte, now time.Time) error {
-	// Locking the flow keeps two approvals of one flow from interleaving.
-	if err := tx.QueryRow(ctx, `SELECT id FROM flows WHERE id = $1 FOR UPDATE`, flowID).Scan(new(string)); errors.Is(err, pgx.ErrNoRows) {
+	// Locking the flow keeps two approvals, or an approval and a retirement,
+	// from interleaving.
+	var retired bool
+	if err := tx.QueryRow(ctx, `SELECT retired_at IS NOT NULL FROM flows WHERE id = $1 FOR UPDATE`, flowID).Scan(&retired); errors.Is(err, pgx.ErrNoRows) {
 		return errNoFlowVersion
 	} else if err != nil {
 		return err
+	}
+	if retired {
+		return errRetired
 	}
 	var status string
 	var payload []byte
@@ -398,4 +430,77 @@ func storeApproval(ctx context.Context, tx pgx.Tx, flowID string, version int, s
 		UPDATE flow_versions SET status = 'approved', approval = $3, approval_statement_id = $4, approved_at = $5
 		WHERE flow_id = $1 AND version = $2`, flowID, version, approval, statementID, now)
 	return err
+}
+
+// putFlowRetirement stores a retirement signed in the CLI, in the same form as
+// an approval (ADR 0023, ADR 0024). Like an approval, it is checked only for
+// consistency, and agents decide whether it is trusted. A retired flow takes
+// no new drafts or approvals. Retiring a retired flow again changes nothing.
+func (s *Server) putFlowRetirement(w http.ResponseWriter, r *http.Request) {
+	flowID := r.PathValue("flow_id")
+	if !trust.ValidAgentID(flowID) {
+		problem(w, errNoFlow.code, errNoFlow.title)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxFlowRequestBytes+1))
+	if err != nil || len(body) > maxFlowRequestBytes {
+		problem(w, http.StatusBadRequest, "The retirement is invalid.")
+		return
+	}
+	got, err := trust.CheckApproval(body, statement.TypeFlowRetirement, s.cfg.Now())
+	if err != nil {
+		problem(w, http.StatusBadRequest, "The retirement is invalid.")
+		return
+	}
+	retirement, err := flow.ParseRetirement(got.Payload)
+	if err != nil {
+		problem(w, http.StatusBadRequest, "The retirement is invalid.")
+		return
+	}
+	var bundle trust.Approval
+	statementID, idErr := hex.DecodeString(got.ID)
+	if err := json.Unmarshal(body, &bundle); err != nil || idErr != nil || len(statementID) != sha256.Size {
+		problem(w, http.StatusInternalServerError, "Could not store the retirement.")
+		return
+	}
+	ctx := r.Context()
+	err = pgx.BeginFunc(ctx, s.cfg.DB, func(tx pgx.Tx) error {
+		var workspace string
+		var retired bool
+		err := tx.QueryRow(ctx, `
+			SELECT w.name, f.retired_at IS NOT NULL FROM flows f JOIN workspaces w ON w.id = f.workspace_id
+			WHERE f.id = $1 FOR UPDATE OF f`, flowID).Scan(&workspace, &retired)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNoFlow
+		}
+		if err != nil {
+			return err
+		}
+		if retirement.FlowID != flowID || retirement.Workspace != workspace {
+			return errRetirementFlow
+		}
+		// The payload names only the flow and its workspace, so any retirement
+		// of this flow is the statement already stored.
+		if retired {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO signed_statements (id, payload_type, envelope) VALUES ($1, $2, $3)
+			ON CONFLICT (id) DO NOTHING`, statementID, string(statement.TypeFlowRetirement), []byte(bundle.Statement)); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE flows SET retirement = $2, retirement_statement_id = $3, retired_at = $4 WHERE id = $1`,
+			flowID, body, statementID, s.cfg.Now())
+		return err
+	})
+	var apiErr apiError
+	switch {
+	case errors.As(err, &apiErr):
+		problem(w, apiErr.code, apiErr.title)
+	case err != nil:
+		problem(w, http.StatusInternalServerError, "Could not store the retirement.")
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }

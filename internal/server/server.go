@@ -259,6 +259,8 @@ func (s *Server) API() http.Handler {
 	mux.Handle("GET /api/v1/runs/{run_id}", s.requireAdmin(http.HandlerFunc(s.getRun)))
 	mux.Handle("POST /api/v1/flows", s.requireAdmin(http.HandlerFunc(s.createFlow)))
 	mux.Handle("GET /api/v1/flows", s.requireAdmin(http.HandlerFunc(s.listFlows)))
+	mux.Handle("GET /api/v1/flows/{flow_id}", s.requireAdmin(http.HandlerFunc(s.getFlow)))
+	mux.Handle("PUT /api/v1/flows/{flow_id}/retirement", s.requireAdmin(http.HandlerFunc(s.putFlowRetirement)))
 	mux.Handle("POST /api/v1/flows/{flow_id}/versions", s.requireAdmin(http.HandlerFunc(s.createFlowVersion)))
 	mux.Handle("GET /api/v1/flows/{flow_id}/versions/{version}", s.requireAdmin(http.HandlerFunc(s.getFlowVersion)))
 	mux.Handle("PUT /api/v1/flows/{flow_id}/versions/{version}/approval", s.requireAdmin(http.HandlerFunc(s.putFlowApproval)))
