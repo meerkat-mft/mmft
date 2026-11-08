@@ -138,17 +138,12 @@ run_with_boxes() {
 }
 
 # send_file NAME OUT sends NAME from agent-a to agent-b with `mmft delivery
-# send --wait`, writing the run's JSON to OUT. It retries while the agents
-# are still connecting, which the API refuses with 409, and returns the
-# command's exit code.
+# send --wait`, writing the run's JSON to OUT, and returns the command's exit
+# code. A run waits for agents that are still connecting.
 send_file() {
-  for _ in $(seq 1 30); do
-    code=0
-    in_lab admin mmft delivery send --api orchestrator:7444 --ca-fingerprint "$ca_fp" --token-file "$admin/api-token" \
-      --workspace lab --from agent-a --to agent-b --file "$1" --wait --timeout 2m >"$2" 2>"$2.err" || code=$?
-    grep -q 409 "$2.err" || return "$code"
-    sleep 1
-  done
+  code=0
+  in_lab admin mmft delivery send --api orchestrator:7444 --ca-fingerprint "$ca_fp" --token-file "$admin/api-token" \
+    --workspace lab --from agent-a --to agent-b --file "$1" --wait --timeout 2m >"$2" 2>"$2.err" || code=$?
   return "$code"
 }
 

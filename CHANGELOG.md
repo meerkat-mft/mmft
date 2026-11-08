@@ -33,6 +33,13 @@ All notable changes to this project are documented here. The format follows [Kee
 - `PUT /api/v1/flows/{flow_id}/versions/{version}/approval` stores an approval only if it verifies against the administrator certificates and root key it carries and signs exactly that version's payload. Approving a version supersedes older ones. See ADR 0023.
 - `mmft flow diff` shows what changed from the approved version, once that version's approval verifies against the pinned root, and prints the payload's SHA-256. `mmft flow approve --sha256 HEX` signs a version only when its payload has that hash, and exits 4 otherwise.
 - `mmft flow retire --workspace NAME` signs a retirement that stops a flow for good. `PUT /api/v1/flows/{flow_id}/retirement` stores it, and a retired flow takes no new drafts or approvals. `GET /api/v1/flows/{flow_id}` returns one flow, and flows report `retired`. See ADR 0024.
+- Each side of a delivery is claimed under a 60-second lease that the agent's updates extend. If an agent goes silent, the delivery fails with `lease_expired` and the run ends, instead of staying `running`. See ADR 0026.
+- A run ends `succeeded`, `partial_failure`, or `failed` once every delivery has ended. The database rejects any status change that isn't allowed and records every change in `delivery_events`.
+
+### Changed
+
+- `POST /api/v1/runs` accepts a run while an agent is offline. The run stays `pending` until both agents are connected, instead of being refused with 409.
+- A busy agent leaves offered work for later, instead of failing the delivery with `agent_busy`. `dispatch_failed` is no longer reported: a lost assignment ends in an expired lease.
 
 ### Security
 

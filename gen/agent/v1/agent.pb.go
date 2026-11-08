@@ -1006,8 +1006,10 @@ func (x *Heartbeat) GetFreeDiskBytes() uint64 {
 	return 0
 }
 
-// WorkOffer tells an agent that a run needs it. The agent verifies the flow
-// version statement and its allowlist before it claims the work.
+// WorkOffer tells an agent that a run needs it, for one side of one delivery.
+// The agent verifies the flow version statement and its allowlist before it
+// claims the work. A manual run leaves flow_id and flow_version empty. An
+// offer can repeat until the work is claimed. See ADR 0026.
 type WorkOffer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
@@ -1076,6 +1078,8 @@ func (x *WorkOffer) GetWorkId() string {
 	return ""
 }
 
+// LeaseClaim asks for the work an offer named. An agent claims only work it
+// has room for.
 type LeaseClaim struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkId        string                 `protobuf:"bytes,1,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
@@ -1120,6 +1124,9 @@ func (x *LeaseClaim) GetWorkId() string {
 	return ""
 }
 
+// LeaseResult answers a claim. A grant is followed by the assignment. A
+// refusal means the work is held, has ended, or was never offered to this
+// agent.
 type LeaseResult struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	WorkId  string                 `protobuf:"bytes,1,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
@@ -1181,6 +1188,8 @@ func (x *LeaseResult) GetLeaseSeconds() uint32 {
 	return 0
 }
 
+// Cancel tells an agent to stop the work, because its lease has ended. The
+// agent removes what it spooled for it.
 type Cancel struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkId        string                 `protobuf:"bytes,1,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
@@ -1233,7 +1242,8 @@ func (x *Cancel) GetReason() string {
 	return ""
 }
 
-// DeliveryUpdate reports progress and extends the lease. File contents and
+// DeliveryUpdate reports progress and extends the lease named by work_id. An
+// update for a lease the agent doesn't hold changes nothing. File contents and
 // raw error output must never be placed in any field.
 type DeliveryUpdate struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
@@ -1247,8 +1257,11 @@ type DeliveryUpdate struct {
 	ManifestStatement []byte `protobuf:"bytes,6,opt,name=manifest_statement,json=manifestStatement,proto3" json:"manifest_statement,omitempty"`
 	// Signed delivery receipt from the destination agent.
 	ReceiptStatement []byte `protobuf:"bytes,7,opt,name=receipt_statement,json=receiptStatement,proto3" json:"receipt_statement,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// This side has finished its part, which releases its lease. The source
+	// sets it once the destination confirms it holds the whole sealed file.
+	SideDone      bool `protobuf:"varint,8,opt,name=side_done,json=sideDone,proto3" json:"side_done,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeliveryUpdate) Reset() {
@@ -1330,9 +1343,16 @@ func (x *DeliveryUpdate) GetReceiptStatement() []byte {
 	return nil
 }
 
-// ManualDelivery gives an agent its side of one delivery in a manual run. The
-// agent reads only from its own outbox and writes only to its own inbox, which
-// are set on its host. See ADR 0021.
+func (x *DeliveryUpdate) GetSideDone() bool {
+	if x != nil {
+		return x.SideDone
+	}
+	return false
+}
+
+// ManualDelivery gives an agent its side of one delivery in a manual run, once
+// it holds the lease for that side. The agent reads only from its own outbox
+// and writes only to its own inbox, which are set on its host. See ADR 0021.
 type ManualDelivery struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	DeliveryId string                 `protobuf:"bytes,1,opt,name=delivery_id,json=deliveryId,proto3" json:"delivery_id,omitempty"`
@@ -1347,8 +1367,11 @@ type ManualDelivery struct {
 	RelayTicket           *RelayTicket `protobuf:"bytes,6,opt,name=relay_ticket,json=relayTicket,proto3" json:"relay_ticket,omitempty"`
 	// The source's signed delivery manifest. Sent to the destination only.
 	ManifestStatement []byte `protobuf:"bytes,7,opt,name=manifest_statement,json=manifestStatement,proto3" json:"manifest_statement,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The lease this assignment was granted under. Every update for it names
+	// this work ID.
+	WorkId        string `protobuf:"bytes,8,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ManualDelivery) Reset() {
@@ -1428,6 +1451,13 @@ func (x *ManualDelivery) GetManifestStatement() []byte {
 		return x.ManifestStatement
 	}
 	return nil
+}
+
+func (x *ManualDelivery) GetWorkId() string {
+	if x != nil {
+		return x.WorkId
+	}
+	return ""
 }
 
 // RelayTicket lets an agent connect to the relay for one delivery.
@@ -1827,7 +1857,7 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\rlease_seconds\x18\x03 \x01(\rR\fleaseSeconds\"9\n" +
 	"\x06Cancel\x12\x17\n" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x98\x02\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xb5\x02\n" +
 	"\x0eDeliveryUpdate\x12\x17\n" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\x12\x1f\n" +
 	"\vdelivery_id\x18\x02 \x01(\tR\n" +
@@ -1838,7 +1868,8 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"bytes_done\x18\x05 \x01(\x04R\tbytesDone\x12-\n" +
 	"\x12manifest_statement\x18\x06 \x01(\fR\x11manifestStatement\x12+\n" +
-	"\x11receipt_statement\x18\a \x01(\fR\x10receiptStatement\"\xc9\x02\n" +
+	"\x11receipt_statement\x18\a \x01(\fR\x10receiptStatement\x12\x1b\n" +
+	"\tside_done\x18\b \x01(\bR\bsideDone\"\xe2\x02\n" +
 	"\x0eManualDelivery\x12\x1f\n" +
 	"\vdelivery_id\x18\x01 \x01(\tR\n" +
 	"deliveryId\x12/\n" +
@@ -1847,7 +1878,8 @@ const file_mmft_agent_v1_agent_proto_rawDesc = "" +
 	"\rpeer_agent_id\x18\x04 \x01(\tR\vpeerAgentId\x126\n" +
 	"\x17peer_identity_statement\x18\x05 \x01(\fR\x15peerIdentityStatement\x12=\n" +
 	"\frelay_ticket\x18\x06 \x01(\v2\x1a.mmft.agent.v1.RelayTicketR\vrelayTicket\x12-\n" +
-	"\x12manifest_statement\x18\a \x01(\fR\x11manifestStatement\"\xa5\x01\n" +
+	"\x12manifest_statement\x18\a \x01(\fR\x11manifestStatement\x12\x17\n" +
+	"\awork_id\x18\b \x01(\tR\x06workId\"\xa5\x01\n" +
 	"\vRelayTicket\x12\x1f\n" +
 	"\vdelivery_id\x18\x01 \x01(\tR\n" +
 	"deliveryId\x12\x16\n" +

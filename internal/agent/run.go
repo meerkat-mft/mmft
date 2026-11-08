@@ -56,10 +56,13 @@ type RunConfig struct {
 const (
 	// updateBuffer is how many delivery updates can wait for a stream.
 	updateBuffer = 64
-	// maxDeliveries is how many deliveries the agent runs at once. More are
-	// refused, so an orchestrator can't make it fill its spool or hold
+	// maxDeliveries is how many deliveries the agent claims at once. It
+	// claims no more, so an orchestrator can't make it fill its spool or hold
 	// unbounded relay streams.
 	maxDeliveries = 8
+	// defaultProgress is how often a delivery extends its lease when the
+	// orchestrator gave no lease length.
+	defaultProgress = 20 * time.Second
 )
 
 const (
@@ -102,9 +105,11 @@ type runner struct {
 	// it first. Only the session loop touches it.
 	held *agentv1.ConnectRequest
 
-	// active holds the IDs of deliveries in progress, under deliveriesMu, and
-	// deliveries waits for them before Run returns.
+	// work holds the claimed work by work ID, and active the IDs of
+	// deliveries in progress, both under deliveriesMu. deliveries waits for
+	// them before Run returns.
 	deliveriesMu sync.Mutex
+	work         map[string]*work
 	active       map[string]bool
 	deliveries   sync.WaitGroup
 }
@@ -202,7 +207,7 @@ func (b *backoff) wait(ctx context.Context) bool {
 
 func newRunner(dir string, cfg RunConfig, s State, keys *Keys) *runner {
 	return &runner{dir: dir, cfg: cfg, s: s, keys: keys,
-		updates: make(chan *agentv1.ConnectRequest, updateBuffer), active: map[string]bool{}}
+		updates: make(chan *agentv1.ConnectRequest, updateBuffer), work: map[string]*work{}, active: map[string]bool{}}
 }
 
 // ErrDeliveryDirs is returned when the outbox, inbox, or spool is unusable.
@@ -328,8 +333,8 @@ func (r *runner) session(runCtx, ctx context.Context, cert *x509.Certificate) (w
 	}
 	r.log("connected", nil, "orchestrator_version", welcome.GetOrchestratorVersion())
 
-	// The reader starts each assigned delivery on its own, under the run's
-	// context, so it carries on across reconnects.
+	// The reader claims offered work and starts each assigned delivery on its
+	// own, under the run's context, so it carries on across reconnects.
 	ended := make(chan error, 1)
 	go func() {
 		for {
@@ -338,8 +343,15 @@ func (r *runner) session(runCtx, ctx context.Context, cert *x509.Certificate) (w
 				ended <- err
 				return
 			}
-			if d := resp.GetManualDelivery(); d != nil {
-				r.startDelivery(runCtx, d)
+			switch {
+			case resp.GetWorkOffer() != nil:
+				r.offered(runCtx, resp.GetWorkOffer())
+			case resp.GetLeaseResult() != nil:
+				r.leaseResult(resp.GetLeaseResult())
+			case resp.GetManualDelivery() != nil:
+				r.startDelivery(runCtx, resp.GetManualDelivery())
+			case resp.GetCancel() != nil:
+				r.cancelled(resp.GetCancel())
 			}
 		}
 	}()

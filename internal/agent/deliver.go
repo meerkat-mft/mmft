@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"filippo.io/age"
 
@@ -65,42 +66,126 @@ var (
 	errPeerNotAllowed = errors.New("agent: the allowlist doesn't allow the other agent")
 )
 
-// codeBusy is reported when the agent already runs maxDeliveries deliveries.
-const codeBusy = "agent_busy"
-
 // deliveryEnded runs as each delivery's goroutine ends. Tests replace it.
 var deliveryEnded = func() {}
 
-// startDelivery runs a delivery on its own, so it outlives a dropped stream. A
-// delivery already in progress is not started twice, and past maxDeliveries a
-// new one is refused at once.
-func (r *runner) startDelivery(ctx context.Context, d *agentv1.ManualDelivery) {
-	id := d.GetDeliveryId()
-	r.deliveriesMu.Lock()
-	defer r.deliveriesMu.Unlock()
-	if r.active[id] {
+// work is one side of a delivery this agent has claimed, as ADR 0026 defines.
+type work struct {
+	granted bool
+	// leaseSeconds is how long the lease lasts unless an update extends it.
+	leaseSeconds uint32
+	// cancel stops the side once it runs.
+	cancel context.CancelFunc
+	// unclaimed drops the claim if no assignment follows it.
+	unclaimed *time.Timer
+}
+
+// offered claims the work in an offer if the agent has room for it. Claims
+// waiting for an answer count toward maxDeliveries, so an orchestrator can't
+// make the agent take more at once. A full agent just doesn't claim, and the
+// work is offered again later.
+func (r *runner) offered(ctx context.Context, o *agentv1.WorkOffer) {
+	id := o.GetWorkId()
+	if !trust.ValidAgentID(id) {
 		return
 	}
-	busy := len(r.active) >= maxDeliveries
-	if !busy {
-		r.active[id] = true
+	r.deliveriesMu.Lock()
+	if r.work[id] != nil || len(r.work) >= maxDeliveries {
+		r.deliveriesMu.Unlock()
+		return
 	}
+	w := &work{}
+	w.unclaimed = time.AfterFunc(callTimeout, func() {
+		r.deliveriesMu.Lock()
+		defer r.deliveriesMu.Unlock()
+		if r.work[id] == w && w.cancel == nil {
+			delete(r.work, id)
+		}
+	})
+	r.work[id] = w
+	r.deliveriesMu.Unlock()
+	r.queue(ctx, &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_LeaseClaim{LeaseClaim: &agentv1.LeaseClaim{WorkId: id}}})
+}
+
+// leaseResult records whether a claim was granted.
+func (r *runner) leaseResult(res *agentv1.LeaseResult) {
+	r.deliveriesMu.Lock()
+	defer r.deliveriesMu.Unlock()
+	w := r.work[res.GetWorkId()]
+	if w == nil || w.granted {
+		return
+	}
+	if !res.GetGranted() {
+		w.unclaimed.Stop()
+		delete(r.work, res.GetWorkId())
+		return
+	}
+	w.granted, w.leaseSeconds = true, res.GetLeaseSeconds()
+}
+
+// cancelled stops the work a Cancel names, because its lease has ended.
+func (r *runner) cancelled(c *agentv1.Cancel) {
+	r.deliveriesMu.Lock()
+	defer r.deliveriesMu.Unlock()
+	w := r.work[c.GetWorkId()]
+	switch {
+	case w == nil:
+	case w.cancel != nil:
+		w.cancel()
+	default:
+		w.unclaimed.Stop()
+		delete(r.work, c.GetWorkId())
+	}
+}
+
+// startDelivery runs an assignment on its own, so it outlives a dropped
+// stream. It runs only under a granted lease the agent holds, and a delivery
+// already in progress is not started twice.
+func (r *runner) startDelivery(ctx context.Context, d *agentv1.ManualDelivery) {
+	id, workID := d.GetDeliveryId(), d.GetWorkId()
+	r.deliveriesMu.Lock()
+	defer r.deliveriesMu.Unlock()
+	w := r.work[workID]
+	if w == nil || !w.granted || w.cancel != nil || r.active[id] {
+		return
+	}
+	w.unclaimed.Stop()
+	ctx, cancel := context.WithCancel(ctx)
+	w.cancel = cancel
+	r.active[id] = true
 	r.deliveries.Add(1)
 	go func() {
 		defer r.deliveries.Done()
 		defer deliveryEnded()
-		if busy {
-			r.log("delivery failed", nil, "delivery_id", id, "code", codeBusy)
-			r.report(ctx, &agentv1.DeliveryUpdate{DeliveryId: id, State: agentv1.DeliveryState_DELIVERY_STATE_FAILED, ErrorCode: codeBusy})
-			return
-		}
 		defer func() {
+			cancel()
 			r.deliveriesMu.Lock()
 			delete(r.active, id)
+			delete(r.work, workID)
 			r.deliveriesMu.Unlock()
 		}()
+		go r.progress(ctx, d, w.leaseSeconds)
 		r.deliver(ctx, d)
 	}()
+}
+
+// progress extends the lease at a third of its length until the side ends,
+// so a long transfer keeps it.
+func (r *runner) progress(ctx context.Context, d *agentv1.ManualDelivery, leaseSeconds uint32) {
+	every := time.Duration(leaseSeconds) * time.Second / 3
+	if every <= 0 {
+		every = defaultProgress
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.report(ctx, &agentv1.DeliveryUpdate{WorkId: d.GetWorkId(), DeliveryId: d.GetDeliveryId()})
+		}
+	}
 }
 
 // deliver runs this agent's side of a manual delivery and reports the result.
@@ -114,11 +199,17 @@ func (r *runner) deliver(ctx context.Context, d *agentv1.ManualDelivery) {
 	var err error
 	switch d.GetRole() {
 	case agentv1.DeliveryRole_DELIVERY_ROLE_SEND:
-		err = r.sendSide(ctx, d)
+		u, err = r.sendSide(ctx, d)
 	case agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE:
 		u, err = r.receiveSide(ctx, d)
 	default:
 		err = failWith(codeInternal, errors.New("agent: unknown delivery role"))
+	}
+	if err != nil && ctx.Err() != nil {
+		// Cancelled, or the agent is stopping. The orchestrator no longer
+		// takes reports under this lease.
+		r.log("delivery stopped", nil, "delivery_id", id)
+		return
 	}
 	if err != nil {
 		code := codeInternal
@@ -129,20 +220,23 @@ func (r *runner) deliver(ctx context.Context, d *agentv1.ManualDelivery) {
 		// Only the code goes in the log and the report, because the error can
 		// name a path.
 		r.log("delivery failed", nil, "delivery_id", id, "code", code)
-		r.report(ctx, &agentv1.DeliveryUpdate{DeliveryId: id, State: agentv1.DeliveryState_DELIVERY_STATE_FAILED, ErrorCode: code})
+		r.report(ctx, &agentv1.DeliveryUpdate{WorkId: d.GetWorkId(), DeliveryId: id, State: agentv1.DeliveryState_DELIVERY_STATE_FAILED, ErrorCode: code})
 		return
 	}
-	if u != nil {
-		r.report(ctx, u)
-	}
+	r.report(ctx, u)
 	r.log("delivery finished", nil, "delivery_id", id)
 }
 
-// report queues an update for the orchestrator. The session loop sends it on
-// the current stream, or on the next one after a reconnect.
+// report queues an update for the orchestrator.
 func (r *runner) report(ctx context.Context, u *agentv1.DeliveryUpdate) {
+	r.queue(ctx, &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_DeliveryUpdate{DeliveryUpdate: u}})
+}
+
+// queue holds a message for the orchestrator. The session loop sends it on
+// the current stream, or on the next one after a reconnect.
+func (r *runner) queue(ctx context.Context, m *agentv1.ConnectRequest) {
 	select {
-	case r.updates <- &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_DeliveryUpdate{DeliveryUpdate: u}}:
+	case r.updates <- m:
 	case <-ctx.Done():
 	}
 }
@@ -165,64 +259,66 @@ func (r *runner) relayConfig() RelayConfig {
 }
 
 // sendSide seals outbox/NAME to the verified destination, reports the signed
-// manifest, and sends the sealed file through the relay.
-func (r *runner) sendSide(ctx context.Context, d *agentv1.ManualDelivery) error {
+// manifest, and sends the sealed file through the relay. It returns the update
+// saying its side is done.
+func (r *runner) sendSide(ctx context.Context, d *agentv1.ManualDelivery) (*agentv1.DeliveryUpdate, error) {
 	if r.cfg.Outbox == "" {
-		return failWith(codeNotConfigured, errNotConfigured)
+		return nil, failWith(codeNotConfigured, errNotConfigured)
 	}
 	if !seal.ValidFileName(d.GetFileName()) {
-		return failWith(codeInvalidFileName, errBadFileName)
+		return nil, failWith(codeInvalidFileName, errBadFileName)
 	}
 	claim, _, err := r.peer(d)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !r.cfg.Allowlist.MaySendTo(claim.AgentID, claim.Workspace) {
-		return failWith(codePeerNotAllowed, errPeerNotAllowed)
+		return nil, failWith(codePeerNotAllowed, errPeerNotAllowed)
 	}
 	recipient, err := age.ParseHybridRecipient(claim.Recipient)
 	if err != nil {
-		return failWith(codePeerInvalid, err)
+		return nil, failWith(codePeerInvalid, err)
 	}
 	outbox, err := r.cfg.Allowlist.Dir(r.cfg.Outbox, allowlist.Read)
 	if err != nil {
-		return failWith(codePathNotAllowed, err)
+		return nil, failWith(codePathNotAllowed, err)
 	}
 	defer func() { _ = outbox.Close() }()
 	f, err := openSource(outbox, d.GetFileName())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = f.Close() }()
 	sealed, err := seal.File(f, r.cfg.Spool, recipient)
 	switch {
 	case errors.Is(err, seal.ErrNoSpace):
-		return failWith(codeSpoolFull, err)
+		return nil, failWith(codeSpoolFull, err)
 	case errors.Is(err, seal.ErrNotRegular):
-		return failWith(codeSourceNotRegular, err)
+		return nil, failWith(codeSourceNotRegular, err)
 	case err != nil:
-		return failWith(codeSealFailed, err)
+		return nil, failWith(codeSealFailed, err)
 	}
 	defer func() { _ = os.Remove(sealed.Path) }()
 
 	delivery := seal.Delivery{DeliveryID: d.GetDeliveryId(), SourceAgent: r.s.AgentID, DestinationAgent: claim.AgentID}
 	e, err := seal.SignManifest(delivery, sealed, r.keys.Signer)
 	if err != nil {
-		return failWith(codeInternal, err)
+		return nil, failWith(codeInternal, err)
 	}
 	manifest, err := json.Marshal(e)
 	if err != nil {
-		return failWith(codeInternal, err)
+		return nil, failWith(codeInternal, err)
 	}
 	r.report(ctx, &agentv1.DeliveryUpdate{
+		WorkId:            d.GetWorkId(),
 		DeliveryId:        d.GetDeliveryId(),
 		State:             agentv1.DeliveryState_DELIVERY_STATE_TRANSFERRING,
 		ManifestStatement: manifest,
 	})
 	if err := SendFile(ctx, r.dir, d.GetRelayTicket(), sealed.Path, r.relayConfig()); err != nil {
-		return failWith(codeRelayFailed, err)
+		return nil, failWith(codeRelayFailed, err)
 	}
-	return nil
+	return &agentv1.DeliveryUpdate{WorkId: d.GetWorkId(), DeliveryId: d.GetDeliveryId(), SideDone: true}, nil
 }
 
 // openSource opens a file in the outbox, refusing a link: the name must be a
@@ -289,6 +385,9 @@ func (r *runner) receiveSide(ctx context.Context, d *agentv1.ManualDelivery) (*a
 	if err := ReceiveFile(ctx, r.dir, d.GetRelayTicket(), spooled, size, r.relayConfig()); err != nil {
 		return nil, failWith(codeRelayFailed, err)
 	}
+	r.report(ctx, &agentv1.DeliveryUpdate{
+		WorkId: d.GetWorkId(), DeliveryId: d.GetDeliveryId(), State: agentv1.DeliveryState_DELIVERY_STATE_VERIFYING,
+	})
 	opened, err := seal.Open(spooled, m, r.keys.Encryption, inbox)
 	switch {
 	case errors.Is(err, seal.ErrHashMismatch), errors.Is(err, seal.ErrSizeMismatch):
@@ -314,6 +413,7 @@ func (r *runner) receiveSide(ctx context.Context, d *agentv1.ManualDelivery) (*a
 		return nil, failWith(codeInternal, err)
 	}
 	return &agentv1.DeliveryUpdate{
+		WorkId:           d.GetWorkId(),
 		DeliveryId:       d.GetDeliveryId(),
 		State:            agentv1.DeliveryState_DELIVERY_STATE_SUCCEEDED,
 		ReceiptStatement: receipt,

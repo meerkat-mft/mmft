@@ -151,8 +151,16 @@ The source agent's signed statement of what a sealed file is and which delivery 
 _Avoid_: Envelope, metadata file
 
 **Lease**:
-An agent's temporary claim on work, which expires if the agent stops responding.
+An agent's temporary claim on one side of a delivery, which expires unless the agent's updates extend it.
 _Avoid_: Lock, reservation
+
+**Work offer**:
+The orchestrator's message telling a connected agent that one side of a delivery is waiting for it to claim.
+_Avoid_: Job offer
+
+**Delivery status**:
+Where a delivery stands: pending, claimed, transferring, verifying, and then succeeded or failed. Only the changes listed in ADR 0026 are allowed.
+_Avoid_: Phase
 
 **Partial failure**:
 The result of a run where some deliveries succeeded and others failed.

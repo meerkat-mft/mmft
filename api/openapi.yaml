@@ -370,8 +370,9 @@ paths:
       summary: Start a manual run
       description: >-
         Moves one file from the source agent's outbox to the destination agent's inbox, without a flow. Both agents
-        must be approved and connected. The file name is a bare name, never a path. Manual runs are for M1, before
-        flows exist. See ADR 0021.
+        must be approved and in the same workspace. The run starts `pending` and waits until both agents are
+        connected and the source claims its side. The file name is a bare name, never a path. Manual runs are for
+        M1, before flows exist. See ADR 0021 and ADR 0026.
       tags: [Runs]
       requestBody:
         required: true
@@ -687,6 +688,9 @@ components:
           type: [integer, 'null']
         status:
           type: string
+          description: >-
+            `pending` until an agent claims the first delivery, then `running`. Once every delivery has ended, the run
+            is `succeeded` if all succeeded, `failed` if none did, and `partial_failure` otherwise. See ADR 0026.
           enum: [pending, running, succeeded, partial_failure, failed, cancelled]
         deliveries:
           type: array
@@ -715,6 +719,10 @@ components:
           pattern: '^[0-9a-f]{64}$'
         status:
           type: string
+          description: >-
+            `pending` until the source claims it, `claimed` while the source seals the file, `transferring` once the
+            manifest is stored, `verifying` once the destination holds the whole sealed file, and `succeeded` once
+            its receipt matches. Any of these can end in `failed`, with an `error_code`. See ADR 0026.
           enum: [pending, claimed, transferring, verifying, retry_wait, succeeded, failed, cancelled]
         evidence:
           type: string

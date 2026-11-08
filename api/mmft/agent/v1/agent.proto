@@ -119,8 +119,10 @@ message Heartbeat {
   uint64 free_disk_bytes = 2;
 }
 
-// WorkOffer tells an agent that a run needs it. The agent verifies the flow
-// version statement and its allowlist before it claims the work.
+// WorkOffer tells an agent that a run needs it, for one side of one delivery.
+// The agent verifies the flow version statement and its allowlist before it
+// claims the work. A manual run leaves flow_id and flow_version empty. An
+// offer can repeat until the work is claimed. See ADR 0026.
 message WorkOffer {
   string run_id = 1;
   string flow_id = 2;
@@ -128,10 +130,15 @@ message WorkOffer {
   string work_id = 4;
 }
 
+// LeaseClaim asks for the work an offer named. An agent claims only work it
+// has room for.
 message LeaseClaim {
   string work_id = 1;
 }
 
+// LeaseResult answers a claim. A grant is followed by the assignment. A
+// refusal means the work is held, has ended, or was never offered to this
+// agent.
 message LeaseResult {
   string work_id = 1;
   bool granted = 2;
@@ -139,6 +146,8 @@ message LeaseResult {
   uint32 lease_seconds = 3;
 }
 
+// Cancel tells an agent to stop the work, because its lease has ended. The
+// agent removes what it spooled for it.
 message Cancel {
   string work_id = 1;
   string reason = 2;
@@ -154,7 +163,8 @@ enum DeliveryState {
   DELIVERY_STATE_FAILED = 6;
 }
 
-// DeliveryUpdate reports progress and extends the lease. File contents and
+// DeliveryUpdate reports progress and extends the lease named by work_id. An
+// update for a lease the agent doesn't hold changes nothing. File contents and
 // raw error output must never be placed in any field.
 message DeliveryUpdate {
   string work_id = 1;
@@ -167,11 +177,14 @@ message DeliveryUpdate {
   bytes manifest_statement = 6;
   // Signed delivery receipt from the destination agent.
   bytes receipt_statement = 7;
+  // This side has finished its part, which releases its lease. The source
+  // sets it once the destination confirms it holds the whole sealed file.
+  bool side_done = 8;
 }
 
-// ManualDelivery gives an agent its side of one delivery in a manual run. The
-// agent reads only from its own outbox and writes only to its own inbox, which
-// are set on its host. See ADR 0021.
+// ManualDelivery gives an agent its side of one delivery in a manual run, once
+// it holds the lease for that side. The agent reads only from its own outbox
+// and writes only to its own inbox, which are set on its host. See ADR 0021.
 message ManualDelivery {
   string delivery_id = 1;
   DeliveryRole role = 2;
@@ -185,6 +198,9 @@ message ManualDelivery {
   RelayTicket relay_ticket = 6;
   // The source's signed delivery manifest. Sent to the destination only.
   bytes manifest_statement = 7;
+  // The lease this assignment was granted under. Every update for it names
+  // this work ID.
+  string work_id = 8;
 }
 
 enum DeliveryRole {

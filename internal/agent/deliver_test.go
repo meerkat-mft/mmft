@@ -151,21 +151,13 @@ func (a *labAgent) run(t *testing.T) {
 	})
 }
 
-// deliver starts a manual run once both agents are connected, and waits for it
-// to end. It returns the run's only delivery.
+// deliver starts a manual run, which waits for both agents to connect, and
+// waits for it to end. It returns the run's only delivery.
 func (l *deliveryLab) deliver(t *testing.T, name string) map[string]any {
 	t.Helper()
 	body := map[string]string{"source_agent_id": l.agents["agent-a"].id, "destination_agent_id": l.agents["agent-b"].id, "file_name": name}
 	deadline := time.Now().Add(10 * time.Second)
-	var code int
-	var run map[string]any
-	for {
-		code, run = l.o.Call(t, http.MethodPost, "/api/v1/runs", body)
-		if code != http.StatusConflict || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	code, run := l.o.Call(t, http.MethodPost, "/api/v1/runs", body)
 	if code != http.StatusAccepted {
 		t.Fatalf("start run: %d %v", code, run)
 	}
@@ -288,7 +280,41 @@ func wantCode(t *testing.T, err error, code string) {
 	}
 }
 
-const testDelivery = "0190a0b0-0000-7000-8000-0000000000d1"
+const (
+	testDelivery = "0190a0b0-0000-7000-8000-0000000000d1"
+	testWork     = "0190a0b0-0000-7000-8000-0000000000e1"
+)
+
+func onlyErr(_ *agentv1.DeliveryUpdate, err error) error { return err }
+
+// grant gives a runner a granted lease, as if it had claimed the work.
+func grant(r *runner, workID string, leaseSeconds uint32) {
+	r.deliveriesMu.Lock()
+	defer r.deliveriesMu.Unlock()
+	r.work[workID] = &work{granted: true, leaseSeconds: leaseSeconds, unclaimed: time.NewTimer(time.Hour)}
+}
+
+// nextUpdate returns the next message the runner queued, or fails after a
+// while.
+func nextUpdate(t *testing.T, r *runner) *agentv1.ConnectRequest {
+	t.Helper()
+	select {
+	case m := <-r.updates:
+		return m
+	case <-time.After(5 * time.Second):
+		t.Fatal("nothing was queued")
+		return nil
+	}
+}
+
+func noUpdate(t *testing.T, r *runner) {
+	t.Helper()
+	select {
+	case m := <-r.updates:
+		t.Fatalf("queued %v", m)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
 
 func TestTheSourceChecksTheDestinationsIdentity(t *testing.T) {
 	l := startDeliveryLab(t)
@@ -315,7 +341,7 @@ func TestTheSourceChecksTheDestinationsIdentity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d := clone(ok)
 			change(d)
-			wantCode(t, r.sendSide(quick(t), d), codePeerInvalid)
+			wantCode(t, onlyErr(r.sendSide(quick(t), d)), codePeerInvalid)
 			empty(t, a.spool)
 		})
 	}
@@ -342,14 +368,14 @@ func TestTheSourceRefusesWhatItMayNotRead(t *testing.T) {
 	d := func(name string) *agentv1.ManualDelivery {
 		return &agentv1.ManualDelivery{DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_SEND, FileName: name, PeerAgentId: b.id, PeerIdentityStatement: b.identity}
 	}
-	wantCode(t, r.sendSide(quick(t), d("link")), codeSourceNotRegular)
-	wantCode(t, r.sendSide(quick(t), d("dir")), codeSourceNotRegular)
-	wantCode(t, r.sendSide(quick(t), d("../secret")), codeInvalidFileName)
-	wantCode(t, r.sendSide(quick(t), d(secret)), codeInvalidFileName)
+	wantCode(t, onlyErr(r.sendSide(quick(t), d("link"))), codeSourceNotRegular)
+	wantCode(t, onlyErr(r.sendSide(quick(t), d("dir"))), codeSourceNotRegular)
+	wantCode(t, onlyErr(r.sendSide(quick(t), d("../secret"))), codeInvalidFileName)
+	wantCode(t, onlyErr(r.sendSide(quick(t), d(secret))), codeInvalidFileName)
 	empty(t, a.spool)
 
 	r.cfg.Outbox = ""
-	wantCode(t, r.sendSide(quick(t), d("link")), codeNotConfigured)
+	wantCode(t, onlyErr(r.sendSide(quick(t), d("link"))), codeNotConfigured)
 }
 
 func TestTheDestinationChecksTheManifest(t *testing.T) {
@@ -483,7 +509,7 @@ func TestDeliveriesNeedTheAllowlist(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			src, dst := a.side(t), b.side(t)
 			src.cfg.Allowlist, dst.cfg.Allowlist = tc.source, tc.destination
-			wantCode(t, src.sendSide(quick(t), clone(send)), tc.code)
+			wantCode(t, onlyErr(src.sendSide(quick(t), clone(send))), tc.code)
 			_, err := dst.receiveSide(quick(t), clone(receive))
 			wantCode(t, err, tc.code)
 			empty(t, a.spool)
@@ -573,39 +599,48 @@ func TestTheDestinationRefusesWhatItMayNotWrite(t *testing.T) {
 	wantCode(t, err, codeNotConfigured)
 }
 
-func TestDeliveriesAreBoundedAndNeverRunTwice(t *testing.T) {
+func TestClaimsAreBoundedAndDeliveriesNeverRunTwice(t *testing.T) {
 	l := startDeliveryLab(t)
 	r := l.agents["agent-b"].side(t)
 	ctx := quick(t)
 
-	// The same delivery again is ignored while the first is running.
-	r.active[testDelivery] = true
-	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery})
-	r.deliveries.Wait()
-	select {
-	case u := <-r.updates:
-		t.Fatalf("a repeated delivery was started: %v", u)
-	default:
+	// Up to the limit, each offer is claimed once.
+	for i := range maxDeliveries {
+		work := fmt.Sprintf("0190a0b0-0000-7000-8000-%012d", i)
+		r.offered(ctx, &agentv1.WorkOffer{WorkId: work})
+		r.offered(ctx, &agentv1.WorkOffer{WorkId: work})
+		if got := nextUpdate(t, r).GetLeaseClaim().GetWorkId(); got != work {
+			t.Fatalf("claimed %q, want %q", got, work)
+		}
+	}
+	noUpdate(t, r)
+	// Past it, nothing more is claimed until a claim is refused.
+	r.offered(ctx, &agentv1.WorkOffer{WorkId: testWork})
+	noUpdate(t, r)
+	r.leaseResult(&agentv1.LeaseResult{WorkId: "0190a0b0-0000-7000-8000-000000000000", Granted: false})
+	r.offered(ctx, &agentv1.WorkOffer{WorkId: testWork})
+	if got := nextUpdate(t, r).GetLeaseClaim().GetWorkId(); got != testWork {
+		t.Fatalf("claimed %q", got)
 	}
 
-	// Past the limit, a new delivery is refused at once.
-	for i := range maxDeliveries - 1 {
-		r.active[fmt.Sprintf("0190a0b0-0000-7000-8000-%012d", i)] = true
-	}
-	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: "0190a0b0-0000-7000-8000-0000000000ff"})
+	// An assignment needs a granted lease.
+	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery, WorkId: testWork})
+	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery, WorkId: "0190a0b0-0000-7000-8000-0000000000ee"})
 	r.deliveries.Wait()
-	select {
-	case u := <-r.updates:
-		if got := u.GetDeliveryUpdate(); got.GetErrorCode() != codeBusy {
-			t.Fatalf("update %v", got)
-		}
-	default:
-		t.Fatal("the extra delivery was not refused")
-	}
+	noUpdate(t, r)
+
+	// The same delivery again is ignored while the first is running.
+	r.leaseResult(&agentv1.LeaseResult{WorkId: testWork, Granted: true, LeaseSeconds: 60})
+	r.active[testDelivery] = true
+	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery, WorkId: testWork})
+	r.deliveries.Wait()
+	noUpdate(t, r)
 }
 
-func TestDeliveriesEndWithTheirContext(t *testing.T) {
-	l := startDeliveryLab(t)
+// receiveNowhere is a receive assignment whose relay address goes nowhere, so
+// the receive retries until stopped.
+func receiveNowhere(t *testing.T, l *deliveryLab) *agentv1.ManualDelivery {
+	t.Helper()
 	a, b := l.agents["agent-a"], l.agents["agent-b"]
 	keys, err := LoadKeys(a.dir)
 	if err != nil {
@@ -617,14 +652,13 @@ func TestDeliveriesEndWithTheirContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest, _ := json.Marshal(e)
-	r := b.side(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	// The relay address goes nowhere, so the receive retries until stopped.
-	r.startDelivery(ctx, &agentv1.ManualDelivery{DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: "f",
+	return &agentv1.ManualDelivery{DeliveryId: testDelivery, WorkId: testWork, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: "f",
 		PeerAgentId: a.id, PeerIdentityStatement: a.identity, ManifestStatement: manifest,
-		RelayTicket: &agentv1.RelayTicket{DeliveryId: testDelivery, RelayAddress: "127.0.0.1:1", RelayCertificateSha256: make([]byte, 32)}})
-	time.Sleep(200 * time.Millisecond)
-	cancel()
+		RelayTicket: &agentv1.RelayTicket{DeliveryId: testDelivery, RelayAddress: "127.0.0.1:1", RelayCertificateSha256: make([]byte, 32)}}
+}
+
+func waitDone(t *testing.T, r *runner) {
+	t.Helper()
 	done := make(chan struct{})
 	go func() {
 		r.deliveries.Wait()
@@ -633,16 +667,68 @@ func TestDeliveriesEndWithTheirContext(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the delivery kept running after its context ended")
+		t.Fatal("the delivery kept running")
 	}
+}
+
+func TestDeliveriesEndWithTheirContext(t *testing.T) {
+	l := startDeliveryLab(t)
+	b := l.agents["agent-b"]
+	r := b.side(t)
+	grant(r, testWork, 60)
+	ctx, cancel := context.WithCancel(context.Background())
+	r.startDelivery(ctx, receiveNowhere(t, l))
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	waitDone(t, r)
 	empty(t, b.spool)
 }
 
-// assigner is an orchestrator that welcomes the agent and then sends it one
-// message.
+func TestACancelStopsTheDelivery(t *testing.T) {
+	l := startDeliveryLab(t)
+	b := l.agents["agent-b"]
+	r := b.side(t)
+	grant(r, testWork, 60)
+	r.startDelivery(quick(t), receiveNowhere(t, l))
+	time.Sleep(200 * time.Millisecond)
+	r.cancelled(&agentv1.Cancel{WorkId: testWork, Reason: "lease_expired"})
+	waitDone(t, r)
+	empty(t, b.spool)
+	// A cancelled side reports nothing: its lease has ended.
+	noUpdate(t, r)
+	if len(r.work) != 0 || len(r.active) != 0 {
+		t.Fatalf("work %v, active %v", r.work, r.active)
+	}
+}
+
+func TestADeliveryExtendsItsLease(t *testing.T) {
+	l := startDeliveryLab(t)
+	r := l.agents["agent-b"].side(t)
+	// A one-second lease is extended every third of a second.
+	grant(r, testWork, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()
+		waitDone(t, r)
+	}()
+	start := time.Now()
+	r.startDelivery(ctx, receiveNowhere(t, l))
+	for range 2 {
+		u := nextUpdate(t, r).GetDeliveryUpdate()
+		if u.GetWorkId() != testWork || u.GetDeliveryId() != testDelivery || u.GetState() == agentv1.DeliveryState_DELIVERY_STATE_FAILED {
+			t.Fatalf("update %v", u)
+		}
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("two updates took %v", elapsed)
+	}
+}
+
+// assigner is an orchestrator that welcomes the agent and then sends it some
+// messages.
 type assigner struct {
 	agentv1.UnimplementedAgentServiceServer
-	m *agentv1.ConnectResponse
+	m []*agentv1.ConnectResponse
 }
 
 func (a assigner) Connect(stream agentv1.AgentService_ConnectServer) error {
@@ -652,8 +738,10 @@ func (a assigner) Connect(stream agentv1.AgentService_ConnectServer) error {
 	if err := stream.Send(&agentv1.ConnectResponse{Message: &agentv1.ConnectResponse_Welcome{Welcome: &agentv1.Welcome{ProtocolVersion: ProtocolVersion}}}); err != nil {
 		return err
 	}
-	if err := stream.Send(a.m); err != nil {
-		return err
+	for _, m := range a.m {
+		if err := stream.Send(m); err != nil {
+			return err
+		}
 	}
 	for {
 		if _, err := stream.Recv(); err != nil {
@@ -673,23 +761,13 @@ func TestRunWaitsForItsDeliveries(t *testing.T) {
 	}
 	t.Cleanup(func() { deliveryEnded = func() {} })
 	l := startDeliveryLab(t)
-	a, b := l.agents["agent-a"], l.agents["agent-b"]
-	keys, err := LoadKeys(a.dir)
-	if err != nil {
-		t.Fatal(err)
+	b := l.agents["agent-b"]
+	// The work is offered, granted, and assigned in turn.
+	assignment := []*agentv1.ConnectResponse{
+		{Message: &agentv1.ConnectResponse_WorkOffer{WorkOffer: &agentv1.WorkOffer{WorkId: testWork}}},
+		{Message: &agentv1.ConnectResponse_LeaseResult{LeaseResult: &agentv1.LeaseResult{WorkId: testWork, Granted: true, LeaseSeconds: 60}}},
+		{Message: &agentv1.ConnectResponse_ManualDelivery{ManualDelivery: receiveNowhere(t, l)}},
 	}
-	e, err := seal.SignManifest(seal.Delivery{DeliveryID: testDelivery, SourceAgent: a.id, DestinationAgent: b.id},
-		seal.Sealed{Size: 100, SHA256: [32]byte{1}}, keys.Signer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest, _ := json.Marshal(e)
-	// The relay address goes nowhere, so the receive retries until stopped.
-	assignment := &agentv1.ConnectResponse{Message: &agentv1.ConnectResponse_ManualDelivery{ManualDelivery: &agentv1.ManualDelivery{
-		DeliveryId: testDelivery, Role: agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE, FileName: "f",
-		PeerAgentId: a.id, PeerIdentityStatement: a.identity, ManifestStatement: manifest,
-		RelayTicket: &agentv1.RelayTicket{DeliveryId: testDelivery, RelayAddress: "127.0.0.1:1", RelayCertificateSha256: make([]byte, 32)},
-	}}}
 	serverCert, err := l.o.CA.ServerCertificate([]string{"localhost"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
