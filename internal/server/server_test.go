@@ -145,8 +145,11 @@ func callConnect(t *testing.T, conn *grpc.ClientConn) codes.Code {
 	return status.Code(err)
 }
 
+// testAllowlistHash is the allowlist hash the test agents report.
+var testAllowlistHash = sha256.Sum256([]byte("version: 1\n"))
+
 func hello(protocol uint32) *agentv1.ConnectRequest {
-	return &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{ProtocolVersion: protocol, AgentVersion: "test"}}}
+	return &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{ProtocolVersion: protocol, AgentVersion: "test", AllowlistHash: testAllowlistHash[:]}}}
 }
 
 func TestEnrollmentNeedsNoCertificate(t *testing.T) {

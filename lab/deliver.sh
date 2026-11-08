@@ -3,7 +3,9 @@
 # file from agent-a to agent-b with `mmft delivery send`, through the test
 # relay. It checks that the file arrives unchanged with both signed statements,
 # that the relay saw only sealed bytes, that the orchestrator holds none of the
-# file, and that both spools are empty afterwards.
+# file, and that both spools are empty afterwards. It also checks that each
+# agent reports its allowlist's hash, and won't start with an allowlist its
+# own account could change.
 set -eu
 cd "$(dirname "$0")"
 
@@ -78,5 +80,20 @@ for host in agent-a agent-b; do
   label="$host's log names no file"
   if ! in_lab "$host" grep -q -F "$marker" "$spool/run.log"; then pass "$label"; else fail "$label"; fi
 done
+
+# The allowlist (ADR 0024). Each agent reports the hash of root's file, and
+# refuses to start with an allowlist its own account could change.
+allowlist_sum=$(in_lab agent-a sha256sum /etc/mmft/allowlist.yaml | cut -d' ' -f1)
+for host in agent-a agent-b; do
+  label="$host reported the hash of its allowlist"
+  reported=$(in_lab postgres psql -tA -U mmft -d mmft -c \
+    "SELECT encode(p.allowlist_sha256, 'hex') FROM agent_presence p JOIN agents a ON a.id = p.agent_id WHERE a.name = '$host'")
+  if [ -n "$allowlist_sum" ] && [ "$reported" = "$allowlist_sum" ]; then pass "$label"; else fail "$label"; fi
+done
+in_lab agent-a cat /etc/mmft/allowlist.yaml | put agent-a "$spool/allowlist.yaml"
+label="an allowlist the agent's own account owns stops the agent"
+if refused=$(in_lab agent-a mmft-agent run --dir "$state" --allowlist "$spool/allowlist.yaml" 2>&1); then
+  fail "$label (it started)"
+elif echo "$refused" | grep -q "owned by root"; then pass "$label"; else fail "$label: $refused"; fi
 
 finish

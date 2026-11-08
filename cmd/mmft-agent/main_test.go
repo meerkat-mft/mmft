@@ -221,3 +221,15 @@ func TestRunNeedsAnEnrolledAgent(t *testing.T) {
 		t.Fatalf("run with an argument: %d", code)
 	}
 }
+
+func TestRunRefusesAnAllowlistOthersCanChange(t *testing.T) {
+	// The test owns the file, so it isn't root's alone.
+	file := filepath.Join(t.TempDir(), "allowlist.yaml")
+	if err := os.WriteFile(file, []byte("version: 1\napprovals: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := cli(t, "run", "--dir", filepath.Join(t.TempDir(), "agent"), "--allowlist", file)
+	if code != exitFailure || !strings.Contains(parseJSON(t, errOut)["error"], "owned by root") {
+		t.Fatalf("run: %d %s", code, errOut)
+	}
+}

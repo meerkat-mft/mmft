@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 	"io"
@@ -91,7 +92,10 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 	if !agentVersionPattern.MatchString(hello.GetAgentVersion()) {
 		return status.Error(codes.InvalidArgument, "the agent version is invalid")
 	}
-	if err := a.seen(ctx, id, hello.GetAgentVersion()); err != nil {
+	if len(hello.GetAllowlistHash()) != sha256.Size {
+		return status.Error(codes.InvalidArgument, "the allowlist hash must be a SHA-256")
+	}
+	if err := a.seen(ctx, id, hello.GetAgentVersion(), hello.GetAllowlistHash()); err != nil {
 		return err
 	}
 	if err := stream.Send(&agentv1.ConnectResponse{Message: &agentv1.ConnectResponse_Welcome{Welcome: &agentv1.Welcome{
@@ -126,11 +130,11 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 		}
 		switch m.GetMessage().(type) {
 		case *agentv1.ConnectRequest_Heartbeat:
-			if err := a.seen(ctx, id, ""); err != nil {
+			if err := a.seen(ctx, id, "", nil); err != nil {
 				return err
 			}
 		case *agentv1.ConnectRequest_DeliveryUpdate:
-			if err := a.seen(ctx, id, ""); err != nil {
+			if err := a.seen(ctx, id, "", nil); err != nil {
 				return err
 			}
 			a.s.deliveryUpdate(ctx, id, m.GetDeliveryUpdate())
@@ -151,8 +155,8 @@ func streamEnd(err error) error {
 }
 
 // seen checks that the agent may still connect and records it as seen. A
-// Hello also records the agent's version.
-func (a agentService) seen(ctx context.Context, id, agentVersion string) error {
+// Hello also records the agent's version and the hash of its allowlist.
+func (a agentService) seen(ctx context.Context, id, agentVersion string, allowlistHash []byte) error {
 	if err := a.s.checkAgent(ctx, id); err != nil {
 		return err
 	}
@@ -160,9 +164,10 @@ func (a agentService) seen(ctx context.Context, id, agentVersion string) error {
 	var err error
 	if agentVersion != "" {
 		_, err = a.s.cfg.DB.Exec(ctx, `
-			INSERT INTO agent_presence (agent_id, agent_version, last_seen_at) VALUES ($1, $2, $3)
-			ON CONFLICT (agent_id) DO UPDATE SET agent_version = EXCLUDED.agent_version, last_seen_at = EXCLUDED.last_seen_at`,
-			id, agentVersion, now)
+			INSERT INTO agent_presence (agent_id, agent_version, allowlist_sha256, last_seen_at) VALUES ($1, $2, $3, $4)
+			ON CONFLICT (agent_id) DO UPDATE SET agent_version = EXCLUDED.agent_version,
+				allowlist_sha256 = EXCLUDED.allowlist_sha256, last_seen_at = EXCLUDED.last_seen_at`,
+			id, agentVersion, allowlistHash, now)
 	} else {
 		_, err = a.s.cfg.DB.Exec(ctx, `UPDATE agent_presence SET last_seen_at = $2 WHERE agent_id = $1`, id, now)
 	}

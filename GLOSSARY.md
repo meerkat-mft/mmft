@@ -197,7 +197,7 @@ An agent's unique ID, derived from its agent fingerprint, so that neither the or
 _Avoid_: Agent UUID, host ID
 
 **Agent allowlist**:
-The locally held list of paths and destinations an agent may use, which the orchestrator cannot change.
+The locally held list of directories an agent may read and write, agents it may send to and receive from, and approvals a flow needs, which the orchestrator cannot change.
 _Avoid_: Agent policy, permissions
 
 **Audit event**:

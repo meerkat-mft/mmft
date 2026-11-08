@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	agentv1 "mmft.dev/mmft/gen/agent/v1"
+	"mmft.dev/mmft/internal/allowlist"
 	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/version"
 )
@@ -42,8 +44,13 @@ type RunConfig struct {
 	// Outbox and Inbox are the only directories manual deliveries read from
 	// and write to, set on this host. With neither, the agent takes no
 	// deliveries. Spool holds sealed files in flight and is required with
-	// either. See ADR 0021.
+	// either. See ADR 0021 and ADR 0024.
 	Outbox, Inbox, Spool string
+	// Allowlist limits what the agent may read and write, and which agents
+	// it may send to and receive from. The outbox must be readable and the
+	// inbox writable under it, and the spool must be outside it. A nil
+	// allowlist denies everything. See ADR 0013 and ADR 0024.
+	Allowlist *allowlist.Allowlist
 }
 
 const (
@@ -133,6 +140,9 @@ func Run(ctx context.Context, dir string, cfg RunConfig) error {
 	}
 	r := newRunner(dir, cfg, s, keys)
 	r.host, r.ca = host, ca
+	if err := r.noteAllowlist(); err != nil {
+		return err
+	}
 	// Deliveries run under their own context, which ends with Run, and Run
 	// waits for them, so none outlives it.
 	deliveryCtx, stopDeliveries := context.WithCancel(ctx)
@@ -198,6 +208,10 @@ func newRunner(dir string, cfg RunConfig, s State, keys *Keys) *runner {
 // ErrDeliveryDirs is returned when the outbox, inbox, or spool is unusable.
 var ErrDeliveryDirs = errors.New("agent: the outbox and inbox need a spool, and each must be a separate, existing directory")
 
+// ErrDirsNotAllowed is returned when the outbox isn't readable or the inbox
+// isn't writable under the allowlist, or the spool is inside it.
+var ErrDirsNotAllowed = errors.New("agent: the outbox must be readable and the inbox writable under the allowlist, and the spool must be outside it")
+
 // checkDirs requires a spool with an outbox or inbox, and each set directory to
 // exist and be a different directory from the others, so a delivery can't read
 // what another wrote or find sealed files where it reads.
@@ -220,6 +234,42 @@ func (c *RunConfig) checkDirs() error {
 			}
 		}
 		seen = append(seen, info)
+	}
+	for dir, access := range map[string]allowlist.Access{c.Outbox: allowlist.Read, c.Inbox: allowlist.Write} {
+		if dir == "" {
+			continue
+		}
+		root, err := c.Allowlist.Dir(dir, access)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrDirsNotAllowed, err)
+		}
+		_ = root.Close()
+	}
+	if c.Spool != "" && c.Allowlist.Includes(c.Spool) {
+		return ErrDirsNotAllowed
+	}
+	return nil
+}
+
+// noteAllowlist keeps the hash of the allowlist the agent started with in its
+// state directory, and logs a change from the last one. Agent audit events
+// arrive with #82, which records the change as one.
+func (r *runner) noteAllowlist() error {
+	hash := r.cfg.Allowlist.Hash()
+	now := hex.EncodeToString(hash[:])
+	path := filepath.Join(r.dir, AllowlistHashFile)
+	before, err := os.ReadFile(path) // #nosec G304 -- the agent's own state directory.
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if string(before) == now {
+		return nil
+	}
+	if len(before) != 0 {
+		r.log("allowlist changed", nil, "previous_sha256", string(before), "sha256", now)
+	}
+	if err := replaceFile(path, []byte(now), 0o644); err != nil {
+		return saveFailed(err)
 	}
 	return nil
 }
@@ -359,7 +409,8 @@ func streamEnd[T any](recv func() (T, error), err error) error {
 }
 
 func (r *runner) hello() *agentv1.ConnectRequest {
-	h := &agentv1.Hello{ProtocolVersion: ProtocolVersion, AgentVersion: version.Version}
+	hash := r.cfg.Allowlist.Hash()
+	h := &agentv1.Hello{ProtocolVersion: ProtocolVersion, AgentVersion: version.Version, AllowlistHash: hash[:]}
 	// The saved identity was verified when it was fetched. A missing one
 	// means the agent isn't approved yet.
 	if identity, err := os.ReadFile(filepath.Join(r.dir, IdentityFile)); err == nil {

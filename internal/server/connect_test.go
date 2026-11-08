@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -59,9 +60,15 @@ func TestConnectNeedsAHelloFirst(t *testing.T) {
 		t.Fatalf("other protocol: %v", err)
 	}
 	for _, v := range []string{"", "1.0\n", string(make([]byte, 65))} {
-		bad := &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{ProtocolVersion: ProtocolVersion, AgentVersion: v}}}
+		bad := &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{ProtocolVersion: ProtocolVersion, AgentVersion: v, AllowlistHash: testAllowlistHash[:]}}}
 		if _, _, err := h.openStream(t, a, bad); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("agent version %q: %v", v, err)
+		}
+	}
+	for _, n := range []int{0, 31, 33} {
+		bad := &agentv1.ConnectRequest{Message: &agentv1.ConnectRequest_Hello{Hello: &agentv1.Hello{ProtocolVersion: ProtocolVersion, AgentVersion: "test", AllowlistHash: make([]byte, n)}}}
+		if _, _, err := h.openStream(t, a, bad); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("allowlist hash of %d bytes: %v", n, err)
 		}
 	}
 	stream, resp, err := h.openStream(t, a, hello(ProtocolVersion))
@@ -123,6 +130,13 @@ func TestConnectRecordsPresence(t *testing.T) {
 	h.waitSeen(t, a.id, h.clock.now())
 	if p := h.presence(t, a.id); p.AgentVersion == nil || *p.AgentVersion != "test" {
 		t.Fatalf("agent version = %v", p.AgentVersion)
+	}
+	var stored []byte
+	if err := h.db.QueryRow(context.Background(), `SELECT allowlist_sha256 FROM agent_presence WHERE agent_id = $1`, a.id).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, testAllowlistHash[:]) {
+		t.Fatalf("stored allowlist hash %x", stored)
 	}
 	h.clock.advance(time.Minute)
 	if err := stream.Send(heartbeat()); err != nil {
