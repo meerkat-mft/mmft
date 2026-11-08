@@ -59,7 +59,7 @@ A flow belongs to one workspace, and its name is unique there. Its versions are 
 
 The flow's name isn't part of the signed payload, so renaming a flow needs no new approval.
 
-**Retiring a flow** stores its retirement on the `flows` row, exactly as received, with its statement in `signed_statements` and the time, as [ADR 0024](adr/0024-flow-retirement-statement.md) defines. The retirement must name the flow and its workspace. A retired flow takes no new drafts or approvals, and its versions stay as evidence.
+**Retiring a flow** stores its retirement on the `flows` row, exactly as received, with its statement in `signed_statements` and the time, as [ADR 0025](adr/0025-flow-retirement-statement.md) defines. The retirement must name the flow and its workspace. A retired flow takes no new drafts or approvals, and its versions stay as evidence.
 
 ## Personal data and evidence
 

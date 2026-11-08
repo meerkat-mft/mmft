@@ -1,4 +1,4 @@
--- Flow retirement, as described in docs/data-model.md and ADR 0024. A retired
+-- Flow retirement, as described in docs/data-model.md and ADR 0025. A retired
 -- flow keeps its versions, but takes no new drafts or approvals. The
 -- retirement is kept as received, and its statement in signed_statements.
 
