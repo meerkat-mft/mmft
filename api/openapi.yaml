@@ -190,13 +190,49 @@ paths:
                     type: string
         '401':
           $ref: '#/components/responses/Problem'
+    post:
+      operationId: createFlow
+      summary: Create a flow
+      description: The flow is empty until a version is saved, and runs nothing until a version is approved.
+      tags: [Flows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, workspace]
+              properties:
+                name:
+                  $ref: '#/components/schemas/Name'
+                workspace:
+                  $ref: '#/components/schemas/Name'
+      responses:
+        '201':
+          description: The new flow.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Flow'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '409':
+          description: The workspace already has a flow with this name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /flows/{flow_id}/versions:
     parameters:
       - $ref: '#/components/parameters/FlowId'
     post:
       operationId: createFlowVersion
       summary: Save a draft flow version
-      description: The server validates the flow. A draft never runs until it is approved.
+      description: |
+        Saves the cards as the flow's next version. The server builds the payload an administrator approves, as ADR 0022
+        defines, and refuses it with the reason when it is invalid. Every agent it names must be approved and in the
+        flow's workspace. A draft never runs until it is approved.
       tags: [Flows]
       requestBody:
         required: true
@@ -239,21 +275,31 @@ paths:
     put:
       operationId: putFlowApproval
       summary: Store a signed approval
-      description: The CLI signs the approval locally. The console has no way to create one.
+      description: |
+        The CLI signs the approval locally. The console has no way to create one. The server stores it only if it
+        verifies against the certificates and root key it carries and signs exactly this version's payload, as ADR 0023
+        defines. The server pins no root, so only agents decide whether the approval is trusted. Approving a version
+        supersedes every older version, and approving an approved version again changes nothing.
       tags: [Flows]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignedStatement'
+              $ref: '#/components/schemas/Approval'
       responses:
         '204':
-          description: The approval was stored.
+          description: The version is approved.
         '400':
           $ref: '#/components/responses/Problem'
         '404':
           $ref: '#/components/responses/Problem'
+        '409':
+          description: A newer version is already approved.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /flows/{flow_id}/runs:
     parameters:
       - $ref: '#/components/parameters/FlowId'
@@ -539,7 +585,7 @@ components:
           $ref: './flow-version.schema.json#/$defs/cards'
     FlowVersion:
       type: object
-      required: [flow_id, version, status, definition]
+      required: [flow_id, version, status, definition, payload, payload_sha256]
       properties:
         flow_id:
           $ref: '#/components/schemas/Id'
@@ -550,8 +596,35 @@ components:
           enum: [draft, approved, superseded]
         definition:
           $ref: '#/components/schemas/FlowDefinition'
+        payload:
+          description: The exact payload an administrator approves, as defined in `flow-version.schema.json`.
+          type: string
+          contentEncoding: base64
+        payload_sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
         approval:
+          $ref: '#/components/schemas/Approval'
+    Approval:
+      type: object
+      description: A signed statement with its signers' administrator certificates and the root key that issued them, as ADR 0023 defines.
+      additionalProperties: false
+      required: [statement, administrator_certificates, root_ed25519, root_mldsa65]
+      properties:
+        statement:
           $ref: '#/components/schemas/SignedStatement'
+        administrator_certificates:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/SignedStatement'
+        root_ed25519:
+          type: string
+          contentEncoding: base64
+        root_mldsa65:
+          type: string
+          contentEncoding: base64
     Run:
       type: object
       required: [id, flow_id, flow_version, status]

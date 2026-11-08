@@ -96,11 +96,17 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 
 // decodeStrict reads one bounded JSON object and rejects unknown fields.
 func decodeStrict(body io.Reader, v any) error {
-	data, err := io.ReadAll(io.LimitReader(body, maxRequestBytes+1))
+	return decodeStrictLimit(body, maxRequestBytes, v)
+}
+
+// decodeStrictLimit is decodeStrict with a larger bound, for requests that
+// carry a flow.
+func decodeStrictLimit(body io.Reader, limit int64, v any) error {
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return err
 	}
-	if len(data) > maxRequestBytes {
+	if int64(len(data)) > limit {
 		return errors.New("request too large")
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))

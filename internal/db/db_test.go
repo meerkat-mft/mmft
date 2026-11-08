@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"strings"
@@ -72,6 +73,20 @@ func tableExists(t *testing.T, pool *pgxpool.Pool, name string) bool {
 	return regclass != nil
 }
 
+// embeddedCount is the number of migrations shipped in the binary.
+func embeddedCount(t *testing.T) int {
+	t.Helper()
+	files, err := fs.Sub(embedded, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrations, err := load(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(migrations)
+}
+
 func TestEmbeddedMigrationsApplyAndRepeat(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
@@ -79,10 +94,10 @@ func TestEmbeddedMigrationsApplyAndRepeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applied != 1 {
-		t.Fatalf("applied = %d", applied)
+	if want := embeddedCount(t); applied != want {
+		t.Fatalf("applied = %d, want %d", applied, want)
 	}
-	for _, table := range []string{"workspaces", "agents", "agent_identities", "agent_presence", "enrollment_tokens", "signed_statements", "runs", "deliveries", "delivery_files"} {
+	for _, table := range []string{"workspaces", "agents", "agent_identities", "agent_presence", "enrollment_tokens", "signed_statements", "runs", "deliveries", "delivery_files", "flows", "flow_versions"} {
 		if !tableExists(t, pool, table) {
 			t.Errorf("%s is missing", table)
 		}
@@ -318,8 +333,8 @@ func TestConcurrentMigrationsApplyOnce(t *testing.T) {
 		}
 		total += results[i]
 	}
-	if total != 1 {
-		t.Fatalf("applied %d times", total)
+	if want := embeddedCount(t); total != want {
+		t.Fatalf("applied %d migrations in all, want %d", total, want)
 	}
 }
 
