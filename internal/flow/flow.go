@@ -104,7 +104,7 @@ func Parse(payload []byte) (*Version, error) {
 	return &v, nil
 }
 
-// Retirement is the payload of a flow retirement statement, as ADR 0024
+// Retirement is the payload of a flow retirement statement, as ADR 0025
 // defines. It names the flow and its workspace, and stops the flow for good.
 type Retirement struct {
 	Version   int    `json:"version"`

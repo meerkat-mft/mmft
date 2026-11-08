@@ -433,7 +433,7 @@ func storeApproval(ctx context.Context, tx pgx.Tx, flowID string, version int, s
 }
 
 // putFlowRetirement stores a retirement signed in the CLI, in the same form as
-// an approval (ADR 0023, ADR 0024). Like an approval, it is checked only for
+// an approval (ADR 0023, ADR 0025). Like an approval, it is checked only for
 // consistency, and agents decide whether it is trusted. A retired flow takes
 // no new drafts or approvals. Retiring a retired flow again changes nothing.
 func (s *Server) putFlowRetirement(w http.ResponseWriter, r *http.Request) {
