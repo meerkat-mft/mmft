@@ -542,14 +542,15 @@ func TestARestartGivesLeasesGrace(t *testing.T) {
 	h, a, b := pair(t)
 	_, run := h.startRun(t, runBody(a, b))
 	send := claim(t, a)
-	// The orchestrator was down past the lease's expiry.
+	// The orchestrator was down past the lease's expiry. Postgres keeps
+	// microseconds, so the expected time is truncated to them.
 	h.clock.advance(5 * time.Minute)
 	h.srv.graceLeases(t.Context())
 	h.srv.expireLeases(t.Context())
 	if got := h.run(t, run.ID).Deliveries[0]; got.Status != "claimed" {
 		t.Fatalf("a lease expired at the restart: %+v", got)
 	}
-	if expires, _ := h.lease(t, send.GetWorkId()); !expires.Equal(h.clock.now().Add(time.Minute)) {
+	if expires, _ := h.lease(t, send.GetWorkId()); !expires.Equal(h.clock.now().Add(time.Minute).Truncate(time.Microsecond)) {
 		t.Fatalf("the lease expires at %v", expires)
 	}
 }
