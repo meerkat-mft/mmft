@@ -29,6 +29,13 @@ All notable changes to this project are documented here. The format follows [Kee
 - `POST /api/v1/flows` creates a flow in a workspace, and `GET /api/v1/flows` lists flows with their approved and latest version numbers.
 - `POST /api/v1/flows/{flow_id}/versions` saves a draft as the flow's next version. The orchestrator builds the payload an administrator approves and refuses an invalid flow with the reason. `GET /api/v1/flows/{flow_id}/versions/{version}` returns a version with its exact payload and SHA-256. See ADR 0022.
 - `PUT /api/v1/flows/{flow_id}/versions/{version}/approval` stores an approval only if it verifies against the administrator certificates and root key it carries and signs exactly that version's payload. Approving a version supersedes older ones. See ADR 0023.
+- Each side of a delivery is claimed under a 60-second lease that the agent's updates extend. If an agent goes silent, the delivery fails with `lease_expired` and the run ends, instead of staying `running`. See ADR 0024.
+- A run ends `succeeded`, `partial_failure`, or `failed` once every delivery has ended. The database rejects any status change that isn't allowed and records every change in `delivery_events`.
+
+### Changed
+
+- `POST /api/v1/runs` accepts a run while an agent is offline. The run stays `pending` until both agents are connected, instead of being refused with 409.
+- A busy agent leaves offered work for later, instead of failing the delivery with `agent_busy`. `dispatch_failed` is no longer reported: a lost assignment ends in an expired lease.
 
 ### Security
 

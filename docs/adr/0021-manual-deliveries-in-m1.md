@@ -1,6 +1,6 @@
 # 0021. Manual deliveries in M1
 
-Status: Accepted
+Status: Accepted, with run start, dispatch, and the busy refusal superseded by [ADR 0024](0024-delivery-states-and-leases.md)
 Date: 2026-11-06
 
 ## Context

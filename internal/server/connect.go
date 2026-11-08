@@ -110,7 +110,6 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 			select {
 			case m := <-out.out:
 				if err := stream.Send(m); err != nil {
-					a.s.dispatchLost(m)
 					sendErr <- err
 					return
 				}
@@ -119,6 +118,8 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 			}
 		}
 	}()
+	// Work waiting for this agent is offered now, not at the next sweep.
+	a.s.offerWork(ctx, "", id)
 	for {
 		m, err := next()
 		if err != nil {
@@ -134,6 +135,11 @@ func (a agentService) Connect(stream agentv1.AgentService_ConnectServer) error {
 				return err
 			}
 			a.s.deliveryUpdate(ctx, id, m.GetDeliveryUpdate())
+		case *agentv1.ConnectRequest_LeaseClaim:
+			if err := a.seen(ctx, id, ""); err != nil {
+				return err
+			}
+			a.s.claim(ctx, id, m.GetLeaseClaim())
 		case *agentv1.ConnectRequest_Hello:
 			return status.Error(codes.InvalidArgument, "the stream already has a hello")
 		default:

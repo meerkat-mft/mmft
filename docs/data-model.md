@@ -25,6 +25,9 @@ This describes what the orchestrator stores and why, for Postgres 18. Terms foll
 | `runs` | One row per trigger firing | Until finished | 13 months by default |
 | `deliveries` | One file to one destination | Until finished | 13 months by default |
 | `delivery_files` | The file name of a delivery | Deleted by retention | Customer setting, 13 months by default |
+| `delivery_leases` | Each offer and lease of one side of a delivery | Extended until it ends | With its delivery |
+| `delivery_events` | Every status change of a delivery | Never | With its delivery |
+| `delivery_status_transitions`, `run_status_transitions` | The allowed status changes | Only by migration | Life of the install |
 
 ```text
 workspaces ─┬─ agents ─┬─ agent_identities
@@ -32,6 +35,8 @@ workspaces ─┬─ agents ─┬─ agent_identities
             ├─ enrollment_tokens
             ├─ flows ─── flow_versions ─── signed_statements (approval)
             └─ runs ─── deliveries ─┬─ delivery_files
+                                    ├─ delivery_leases ─── agents
+                                    ├─ delivery_events
                                     └─ signed_statements (manifest, receipt)
 ```
 
@@ -40,9 +45,48 @@ Every delivery belongs to a run, including a manual one. A run of a flow names t
 A manual run, as ADR 0021 defines, fills the tables as follows:
 
 - **`runs`:** a row in the agents' shared workspace, with no flow.
-- **`deliveries`:** one row, from `pending` to `transferring` once the source's manifest is stored, then to `succeeded` once the destination's receipt matches it. Its `size_bytes` and `sealed_sha256` describe the sealed file, as the manifest states them. A failure sets `failed` and a stable `error_code` on both the delivery and the run.
+- **`deliveries`:** one row, which moves through the statuses below. Its `size_bytes` and `sealed_sha256` describe the sealed file, as the manifest states them.
 - **`delivery_files`:** one row with the bare file name. It is the only place the name is stored.
+- **`delivery_leases`:** one row for the send side and one for the receive side, once each is offered.
 - **`signed_statements`:** the manifest and the receipt, each linked from the delivery.
+
+## Delivery and run statuses
+
+The statuses and leases are defined in [ADR 0024](adr/0024-delivery-states-and-leases.md). The database enforces them: triggers reject any status change not listed in `delivery_status_transitions` or `run_status_transitions`, and a new delivery or run must start `pending`.
+
+```text
+pending ──▶ claimed ──▶ transferring ──▶ verifying ──▶ succeeded
+   │           │             │               │
+   └───────────┴─────────────┴───────────────┴──▶ failed (with error_code)
+```
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | Waiting for both agents to be connected and the source to claim the send side |
+| `claimed` | The source holds the send lease and seals the file |
+| `transferring` | The manifest is stored, and the receive side is offered to the destination |
+| `verifying` | The destination holds the whole sealed file and checks it |
+| `succeeded` | The receipt matches the manifest, so the evidence is `verified` |
+| `failed` | Ended without the file in place. `error_code` says why |
+| `retry_wait`, `cancelled` | Reserved for retries and cancellation. No transition reaches them yet |
+
+A run starts `pending`, becomes `running` when its first lease is granted, and ends once none of its deliveries is active:
+
+- `succeeded` if every delivery succeeded,
+- `failed` if none did,
+- `partial_failure` otherwise.
+
+The database refuses to end a run while one of its deliveries is still active.
+
+**Leases.** Each row in `delivery_leases` is one offer of one side, and its ID is the work ID the agent claims. It is `offered_at` when created, and `granted_at` with an `expires_at` once claimed. Each accepted update moves `expires_at` forward. It ends once, with an `end_reason`:
+
+- `released`: its side finished.
+- `expired`: its agent went silent, which fails the delivery with `lease_expired`.
+- `delivery_ended`: the delivery ended first.
+
+A partial unique index allows one open lease per side. A retry gets a new row, so an old work ID can never act again. The table is kept apart from `deliveries`, with a lower fill factor, so that extending a lease doesn't rewrite the delivery row.
+
+**Events.** A trigger writes a `delivery_events` row for every status change, with the old and new status and the error code, in the same transaction. The table is append-only: updates, deletes, and truncation are rejected. It holds no file name. It isn't hash-chained. Signed audit events come from the agents' audit batches.
 
 ## Signed statements
 
@@ -71,6 +115,9 @@ Delivery manifests and receipts must not contain file names either, because `sig
 | Query | Served by |
 | --- | --- |
 | Find active deliveries | Partial index on active statuses |
+| Find expired leases | Partial index on open, granted leases by `expires_at` |
+| Find a delivery's open lease for one side | Partial unique index on `delivery_leases (delivery_id, side)` |
+| List a delivery's status changes | `delivery_events (delivery_id)` |
 | List a run's deliveries | `deliveries (run_id)` |
 | Find an agent's deliveries | `deliveries (source_agent_id)` and `(destination_agent_id)` |
 | Page through runs in a workspace | `runs (workspace_id, id DESC)` |
@@ -92,7 +139,7 @@ Partitioning `deliveries` by month is the planned path, once real volumes need i
 
 ## Still to design
 
-- The audit event tables, in M2.
+- The audit event tables, in M2, and how `delivery_events` relates to them.
 - Users, roles, and API tokens, in M3.
 - Separate database roles for migrations and the running service.
 - The retention job.

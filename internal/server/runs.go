@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -17,9 +18,10 @@ import (
 )
 
 // Manual runs move one file from one agent's outbox to another's inbox, with
-// no flow, as ADR 0021 defines. The orchestrator assigns each side over the
-// agent's stream, stores the source's manifest and the destination's receipt,
-// and never sees the file's contents.
+// no flow, as ADR 0021 defines. Each side is claimed under a lease, as ADR 0024
+// defines, and assigned over the agent's stream. The orchestrator stores the
+// source's manifest and the destination's receipt, and never sees the file's
+// contents.
 
 // streamBuffer is how many messages can wait for one agent's stream.
 const streamBuffer = 16
@@ -33,7 +35,7 @@ const (
 	codeAgentFailed     = "agent_failed"
 	codeInvalidManifest = "invalid_manifest"
 	codeInvalidReceipt  = "invalid_receipt"
-	codeDispatchFailed  = "dispatch_failed"
+	codeLeaseExpired    = "lease_expired"
 )
 
 // agentStream lets other code send messages on an agent's open stream. Only
@@ -43,9 +45,9 @@ type agentStream struct {
 }
 
 // register makes a stream the agent's current one. A newer stream from the same
-// agent replaces it. The returned function removes it again, and fails every
-// delivery whose assignment was still waiting in its queue, so no delivery is
-// left running with no agent working on it.
+// agent replaces it. The returned function removes it again. A message still
+// in its queue is dropped: an offer is made again, and a lease whose
+// assignment never arrived expires.
 func (s *Server) register(agentID string) (*agentStream, func()) {
 	st := &agentStream{out: make(chan *agentv1.ConnectResponse, streamBuffer)}
 	s.streamsMu.Lock()
@@ -57,22 +59,6 @@ func (s *Server) register(agentID string) (*agentStream, func()) {
 			delete(s.streams, agentID)
 		}
 		s.streamsMu.Unlock()
-		for {
-			select {
-			case m := <-st.out:
-				s.dispatchLost(m)
-			default:
-				return
-			}
-		}
-	}
-}
-
-// dispatchLost fails the delivery a message assigned, when the message never
-// reached the agent.
-func (s *Server) dispatchLost(m *agentv1.ConnectResponse) {
-	if d := m.GetManualDelivery(); d != nil {
-		s.failDelivery(context.Background(), d.GetDeliveryId(), codeDispatchFailed)
 	}
 }
 
@@ -176,8 +162,9 @@ type runItem struct {
 }
 
 // startRun starts a manual run: one file from the source's outbox to the
-// destination's inbox. Both agents must be approved, in the same workspace,
-// and connected now, because manual runs don't wait or retry.
+// destination's inbox. Both agents must be approved and in the same
+// workspace. The run waits, pending, until both are connected and the source
+// claims its side.
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	var req runRequest
 	if err := decodeStrict(r.Body, &req); err != nil || !trust.ValidAgentID(req.SourceAgentID) ||
@@ -195,13 +182,12 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	var runID, deliveryID string
-	var dest runAgent
 	err := pgx.BeginFunc(ctx, s.cfg.DB, func(tx pgx.Tx) error {
 		src, err := s.loadRunAgent(ctx, tx, req.SourceAgentID)
 		if err != nil {
 			return err
 		}
-		dest, err = s.loadRunAgent(ctx, tx, req.DestinationAgentID)
+		dest, err := s.loadRunAgent(ctx, tx, req.DestinationAgentID)
 		if err != nil {
 			return err
 		}
@@ -213,10 +199,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		if src.workspaceID != dest.workspaceID {
 			return apiError{http.StatusConflict, "Both agents must be in the same workspace."}
 		}
-		if !s.connected(req.SourceAgentID) || !s.connected(req.DestinationAgentID) {
-			return apiError{http.StatusConflict, "Both agents must be connected."}
-		}
-		if err := tx.QueryRow(ctx, `INSERT INTO runs (workspace_id, status) VALUES ($1, 'running') RETURNING id`,
+		if err := tx.QueryRow(ctx, `INSERT INTO runs (workspace_id, status) VALUES ($1, 'pending') RETURNING id`,
 			src.workspaceID).Scan(&runID); err != nil {
 			return err
 		}
@@ -241,18 +224,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusInternalServerError, "Could not start the run.")
 		return
 	}
-
-	ticket, err := s.relayTicket(deliveryID, relayticket.Send, req.SourceAgentID, req.DestinationAgentID)
-	if err != nil || !s.push(req.SourceAgentID, manualDelivery(&agentv1.ManualDelivery{
-		DeliveryId:            deliveryID,
-		Role:                  agentv1.DeliveryRole_DELIVERY_ROLE_SEND,
-		FileName:              req.FileName,
-		PeerAgentId:           req.DestinationAgentID,
-		PeerIdentityStatement: dest.identity,
-		RelayTicket:           ticket,
-	})) {
-		s.failDelivery(ctx, deliveryID, codeDispatchFailed)
-	}
+	s.offerWork(ctx, deliveryID, "")
 	run, err := s.readRun(ctx, runID)
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "Could not read the run.")
@@ -314,24 +286,110 @@ func (s *Server) readRun(ctx context.Context, runID string) (runItem, error) {
 	return run, rows.Err()
 }
 
-// failDelivery ends a delivery and its run as failed, unless it has already
-// ended.
-func (s *Server) failDelivery(ctx context.Context, deliveryID, code string) {
-	_ = pgx.BeginFunc(context.WithoutCancel(ctx), s.cfg.DB, func(tx pgx.Tx) error {
-		var runID string
-		err := tx.QueryRow(context.WithoutCancel(ctx), `
-			UPDATE deliveries SET status = 'failed', error_code = $2
-			WHERE id = $1 AND status NOT IN ('succeeded', 'failed', 'cancelled')
-			RETURNING run_id`, deliveryID, code).Scan(&runID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+// endDelivery fails a delivery with code, unless it has already ended, ends
+// its leases, and ends its run once every delivery has. With expiredWork set,
+// it first expires that lease, and does nothing if an update renewed it
+// meanwhile. Agents still holding a lease are told to stop.
+func (s *Server) endDelivery(ctx context.Context, deliveryID, code, expiredWork string) {
+	ctx = context.WithoutCancel(ctx)
+	var cancels []held
+	err := pgx.BeginFunc(ctx, s.cfg.DB, func(tx pgx.Tx) error {
+		cancels = nil
+		now := s.cfg.Now()
+		if expiredWork != "" {
+			var holder string
+			if err := tx.QueryRow(ctx, `
+				UPDATE delivery_leases SET ended_at = $2, end_reason = 'expired'
+				WHERE id = $1 AND ended_at IS NULL AND granted_at IS NOT NULL AND expires_at < $2
+				RETURNING delivery_id, agent_id`, expiredWork, now).Scan(&deliveryID, &holder); err != nil {
+				return err
+			}
+			cancels = append(cancels, held{expiredWork, holder})
 		}
+		var runID string
+		if err := tx.QueryRow(ctx, `
+			UPDATE deliveries SET status = 'failed', error_code = $2
+			WHERE id = $1 AND status IN `+activeStatuses+`
+			RETURNING run_id`, deliveryID, code).Scan(&runID); err != nil {
+			return err
+		}
+		ended, err := endLeases(ctx, tx, deliveryID, now)
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(context.WithoutCancel(ctx), `UPDATE runs SET status = 'failed' WHERE id = $1`, runID)
-		return err
+		cancels = append(cancels, ended...)
+		return finishRun(ctx, tx, runID)
 	})
+	if err != nil {
+		return
+	}
+	for _, h := range cancels {
+		s.push(h.agentID, cancelWork(h.workID, code))
+	}
+}
+
+// held is a granted lease and the agent holding it.
+type held struct{ workID, agentID string }
+
+// endLeases ends every open lease of a delivery that has ended, and returns
+// the granted ones, whose agents may still be working.
+func endLeases(ctx context.Context, tx pgx.Tx, deliveryID string, now time.Time) ([]held, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE delivery_leases SET ended_at = $2, end_reason = 'delivery_ended'
+		WHERE delivery_id = $1 AND ended_at IS NULL
+		RETURNING id, agent_id, granted_at IS NOT NULL`, deliveryID, now)
+	if err != nil {
+		return nil, err
+	}
+	var out []held
+	var h held
+	var granted bool
+	_, err = pgx.ForEachRow(rows, []any{&h.workID, &h.agentID, &granted}, func() error {
+		if granted {
+			out = append(out, h)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// runOutcome is a run's final status once none of its deliveries is active.
+func runOutcome(succeeded, total int) string {
+	switch {
+	case total > 0 && succeeded == total:
+		return "succeeded"
+	case succeeded > 0:
+		return "partial_failure"
+	default:
+		return "failed"
+	}
+}
+
+// finishRun ends a run once none of its deliveries is active. It locks the run
+// row first, so two deliveries ending together can't both miss the end.
+func finishRun(ctx context.Context, tx pgx.Tx, runID string) error {
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM runs WHERE id = $1 FOR UPDATE`, runID).Scan(&status); err != nil {
+		return err
+	}
+	var active, succeeded, total int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE status IN `+activeStatuses+`),
+		       count(*) FILTER (WHERE status = 'succeeded'), count(*)
+		FROM deliveries WHERE run_id = $1`, runID).Scan(&active, &succeeded, &total); err != nil {
+		return err
+	}
+	if active > 0 || (status != "pending" && status != "running") {
+		return nil
+	}
+	outcome := runOutcome(succeeded, total)
+	if status == "pending" && outcome != "failed" {
+		if _, err := tx.Exec(ctx, `UPDATE runs SET status = 'running' WHERE id = $1`, runID); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(ctx, `UPDATE runs SET status = $2 WHERE id = $1`, runID, outcome)
+	return err
 }
 
 // openDelivery is a delivery still in progress, as an update sees it.
@@ -341,35 +399,44 @@ type openDelivery struct {
 	manifestID                         []byte
 }
 
-// deliveryUpdate handles an agent's report on a manual delivery. An update for
-// an unknown or finished delivery, or from an agent that isn't part of it, is
-// ignored, so no agent can end another pair's delivery.
+// deliveryUpdate handles an agent's report on its side of a delivery. The
+// update must name a lease the agent holds for that delivery, and renews it.
+// Anything else is ignored, so no agent can end another pair's delivery, and
+// an agent whose lease has ended can no longer act.
 func (s *Server) deliveryUpdate(ctx context.Context, agentID string, u *agentv1.DeliveryUpdate) {
-	if !trust.ValidAgentID(u.GetDeliveryId()) {
+	side, ok := s.extend(ctx, agentID, u)
+	if !ok {
 		return
 	}
+	id := u.GetDeliveryId()
 	var d openDelivery
 	err := s.cfg.DB.QueryRow(ctx, `
 		SELECT d.run_id, d.source_agent_id, d.destination_agent_id, d.status, coalesce(f.file_name, ''),
 		       d.manifest_statement_id
 		FROM deliveries d LEFT JOIN delivery_files f ON f.delivery_id = d.id
-		WHERE d.id = $1 AND d.status NOT IN ('succeeded', 'failed', 'cancelled')`, u.GetDeliveryId()).
+		WHERE d.id = $1 AND d.status IN `+activeStatuses, id).
 		Scan(&d.runID, &d.source, &d.destination, &d.status, &d.fileName, &d.manifestID)
-	if err != nil || (agentID != d.source && agentID != d.destination) {
+	if err != nil {
 		return
 	}
-	id := u.GetDeliveryId()
 	switch {
 	case u.GetState() == agentv1.DeliveryState_DELIVERY_STATE_FAILED || u.GetErrorCode() != "":
 		code := u.GetErrorCode()
 		if !errorCodePattern.MatchString(code) {
 			code = codeAgentFailed
 		}
-		s.failDelivery(ctx, id, code)
-	case agentID == d.source && d.status == "pending" && len(u.GetManifestStatement()) > 0:
+		s.endDelivery(ctx, id, code, "")
+		return
+	case side == sideSend && d.status == "claimed" && len(u.GetManifestStatement()) > 0:
 		s.manifestArrived(ctx, id, d, u.GetManifestStatement())
-	case agentID == d.destination && d.status == "transferring" && len(u.GetReceiptStatement()) > 0:
+	case side == sideReceive && (d.status == "transferring" || d.status == "verifying") && len(u.GetReceiptStatement()) > 0:
 		s.receiptArrived(ctx, id, d, u.GetReceiptStatement())
+		return
+	case side == sideReceive && d.status == "transferring" && u.GetState() == agentv1.DeliveryState_DELIVERY_STATE_VERIFYING:
+		_, _ = s.cfg.DB.Exec(ctx, `UPDATE deliveries SET status = 'verifying' WHERE id = $1 AND status = 'transferring'`, id)
+	}
+	if side == sideSend && u.GetSideDone() {
+		s.release(ctx, u.GetWorkId())
 	}
 }
 
@@ -377,14 +444,13 @@ func (d openDelivery) delivery(id string) seal.Delivery {
 	return seal.Delivery{DeliveryID: id, SourceAgent: d.source, DestinationAgent: d.destination}
 }
 
-// manifestArrived stores the source's manifest and assigns the destination its
-// side, with the manifest and the source's identity.
+// manifestArrived stores the source's manifest, and offers the receive side
+// to the destination.
 func (s *Server) manifestArrived(ctx context.Context, id string, d openDelivery, raw []byte) {
-	var src runAgent
 	var stored bool
 	err := pgx.BeginFunc(ctx, s.cfg.DB, func(tx pgx.Tx) error {
-		var err error
-		if src, err = s.loadRunAgent(ctx, tx, d.source); err != nil {
+		src, err := s.loadRunAgent(ctx, tx, d.source)
+		if err != nil {
 			return err
 		}
 		m, statementID, err := seal.VerifyManifest(raw, src.verifier, d.delivery(id))
@@ -407,33 +473,22 @@ func (s *Server) manifestArrived(ctx context.Context, id string, d openDelivery,
 		tag, err := tx.Exec(ctx, `
 			UPDATE deliveries SET status = 'transferring', evidence = 'source_only', manifest_statement_id = $2,
 			       sealed_sha256 = $3, size_bytes = $4
-			WHERE id = $1 AND status = 'pending'`, id, sid, sum, m.SealedSize)
+			WHERE id = $1 AND status = 'claimed'`, id, sid, sum, m.SealedSize)
 		stored = err == nil && tag.RowsAffected() == 1
 		return err
 	})
 	if err != nil {
-		s.failDelivery(ctx, id, codeInvalidManifest)
+		s.endDelivery(ctx, id, codeInvalidManifest, "")
 		return
 	}
-	if !stored {
-		return
-	}
-	ticket, err := s.relayTicket(id, relayticket.Receive, d.destination, d.source)
-	if err != nil || !s.push(d.destination, manualDelivery(&agentv1.ManualDelivery{
-		DeliveryId:            id,
-		Role:                  agentv1.DeliveryRole_DELIVERY_ROLE_RECEIVE,
-		FileName:              d.fileName,
-		PeerAgentId:           d.source,
-		PeerIdentityStatement: src.identity,
-		RelayTicket:           ticket,
-		ManifestStatement:     raw,
-	})) {
-		s.failDelivery(ctx, id, codeDispatchFailed)
+	if stored {
+		s.offerWork(ctx, id, "")
 	}
 }
 
 // receiptArrived stores the destination's receipt once it matches the stored
-// manifest, and completes the delivery and its run.
+// manifest, and completes the delivery and, once every delivery has ended, its
+// run.
 func (s *Server) receiptArrived(ctx context.Context, id string, d openDelivery, raw []byte) {
 	err := pgx.BeginFunc(ctx, s.cfg.DB, func(tx pgx.Tx) error {
 		src, err := s.loadRunAgent(ctx, tx, d.source)
@@ -465,16 +520,23 @@ func (s *Server) receiptArrived(ctx context.Context, id string, d openDelivery, 
 			ON CONFLICT (id) DO NOTHING`, sid, string(statement.TypeDeliveryReceipt), raw); err != nil {
 			return err
 		}
+		// A receipt implies the destination verified the file, even if its
+		// verifying update was never handled.
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET status = 'verifying' WHERE id = $1 AND status = 'transferring'`, id); err != nil {
+			return err
+		}
 		tag, err := tx.Exec(ctx, `
 			UPDATE deliveries SET status = 'succeeded', evidence = 'verified', receipt_statement_id = $2
-			WHERE id = $1 AND status = 'transferring'`, id, sid)
+			WHERE id = $1 AND status = 'verifying'`, id, sid)
 		if err != nil || tag.RowsAffected() != 1 {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE runs SET status = 'succeeded' WHERE id = $1`, d.runID)
-		return err
+		if _, err := endLeases(ctx, tx, id, s.cfg.Now()); err != nil {
+			return err
+		}
+		return finishRun(ctx, tx, d.runID)
 	})
 	if err != nil {
-		s.failDelivery(ctx, id, codeInvalidReceipt)
+		s.endDelivery(ctx, id, codeInvalidReceipt, "")
 	}
 }

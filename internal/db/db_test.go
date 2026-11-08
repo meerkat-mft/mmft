@@ -97,7 +97,7 @@ func TestEmbeddedMigrationsApplyAndRepeat(t *testing.T) {
 	if want := embeddedCount(t); applied != want {
 		t.Fatalf("applied = %d, want %d", applied, want)
 	}
-	for _, table := range []string{"workspaces", "agents", "agent_identities", "agent_presence", "enrollment_tokens", "signed_statements", "runs", "deliveries", "delivery_files", "flows", "flow_versions"} {
+	for _, table := range []string{"workspaces", "agents", "agent_identities", "agent_presence", "enrollment_tokens", "signed_statements", "runs", "deliveries", "delivery_files", "flows", "flow_versions", "delivery_status_transitions", "run_status_transitions", "delivery_events", "delivery_leases"} {
 		if !tableExists(t, pool, table) {
 			t.Errorf("%s is missing", table)
 		}
@@ -131,7 +131,7 @@ func newFixture(t *testing.T, pool *pgxpool.Pool) fixture {
 	if err := pool.QueryRow(ctx, agent, f.workspace, "b").Scan(&f.b); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `INSERT INTO runs (workspace_id, status) VALUES ($1, 'running') RETURNING id`, f.workspace).Scan(&f.run); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO runs (workspace_id, status) VALUES ($1, 'pending') RETURNING id`, f.workspace).Scan(&f.run); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -186,29 +186,62 @@ func TestSchemaRejectsBadRows(t *testing.T) {
 		"delivery status":      func() error { return f.delivery(ctx, pool, "status", "nope") },
 		"evidence":             func() error { return f.delivery(ctx, pool, "status, evidence", "pending", "nope") },
 		"short sealed hash":    func() error { return f.delivery(ctx, pool, "status, sealed_sha256", "pending", []byte{1}) },
-		"raw error text":       func() error { return f.delivery(ctx, pool, "status, error_code", "failed", "Permission denied: /etc") },
+		"raw error text":       func() error { return f.delivery(ctx, pool, "status, error_code", "pending", "Permission denied: /etc") },
 		"verified, no receipt": func() error {
-			return f.delivery(ctx, pool, "status, evidence, manifest_statement_id, sealed_sha256", "verifying", "verified", hash, hash)
+			return f.delivery(ctx, pool, "status, evidence, manifest_statement_id, sealed_sha256", "pending", "verified", hash, hash)
 		},
 		"verified, no manifest": func() error {
-			return f.delivery(ctx, pool, "status, evidence, receipt_statement_id, sealed_sha256", "verifying", "verified", hash, hash)
+			return f.delivery(ctx, pool, "status, evidence, receipt_statement_id, sealed_sha256", "pending", "verified", hash, hash)
 		},
 		"verified, no hash": func() error {
-			return f.delivery(ctx, pool, "status, evidence, manifest_statement_id, receipt_statement_id", "verifying", "verified", hash, hash)
+			return f.delivery(ctx, pool, "status, evidence, manifest_statement_id, receipt_statement_id", "pending", "verified", hash, hash)
 		},
 		"source only, no manifest": func() error {
-			return f.delivery(ctx, pool, "status, evidence, sealed_sha256", "verifying", "source_only", hash)
+			return f.delivery(ctx, pool, "status, evidence, sealed_sha256", "pending", "source_only", hash)
 		},
-		"succeeded without evidence": func() error { return f.delivery(ctx, pool, "status", "succeeded") },
+		"succeeded without evidence": func() error {
+			return walk(ctx, pool, f, "", "claimed", "transferring", "verifying", "succeeded")
+		},
+		"failed without a code": func() error { return walk(ctx, pool, f, "", "failed") },
 	}
 	for name, try := range bad {
 		if try() == nil {
 			t.Errorf("%s accepted", name)
 		}
 	}
-	if err := f.delivery(ctx, pool, "status, evidence, manifest_statement_id, receipt_statement_id, sealed_sha256", "succeeded", "verified", hash, hash, hash); err != nil {
+	var id string
+	if err := pool.QueryRow(ctx, `INSERT INTO deliveries (run_id, source_agent_id, destination_agent_id, status, evidence,
+		manifest_statement_id, receipt_statement_id, sealed_sha256) VALUES ($1, $2, $3, 'pending', 'verified', $4, $4, $4)
+		RETURNING id`, f.run, f.a, f.b, hash).Scan(&id); err != nil {
 		t.Fatalf("a complete delivery was rejected: %v", err)
 	}
+	if err := walkDelivery(ctx, pool, id, "claimed", "transferring", "verifying", "succeeded"); err != nil {
+		t.Fatalf("a complete delivery could not succeed: %v", err)
+	}
+}
+
+// walk inserts a pending delivery, with the given error code if any, and moves
+// it through each status in turn.
+func walk(ctx context.Context, pool *pgxpool.Pool, f fixture, code string, statuses ...string) error {
+	var id string
+	var c *string
+	if code != "" {
+		c = &code
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO deliveries (run_id, source_agent_id, destination_agent_id, status, error_code)
+		VALUES ($1, $2, $3, 'pending', $4) RETURNING id`, f.run, f.a, f.b, c).Scan(&id); err != nil {
+		return err
+	}
+	return walkDelivery(ctx, pool, id, statuses...)
+}
+
+func walkDelivery(ctx context.Context, pool *pgxpool.Pool, id string, statuses ...string) error {
+	for _, s := range statuses {
+		if _, err := pool.Exec(ctx, `UPDATE deliveries SET status = $2 WHERE id = $1`, id, s); err != nil {
+			return fmt.Errorf("to %s: %w", s, err)
+		}
+	}
+	return nil
 }
 
 func TestDefaultIDsAreUUIDv7(t *testing.T) {
@@ -282,7 +315,7 @@ func TestUpdatedAtFollowsChanges(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT updated_at FROM runs WHERE id = $1`, f.run).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `UPDATE runs SET status = 'succeeded' WHERE id = $1 RETURNING updated_at`, f.run).Scan(&after); err != nil {
+	if err := pool.QueryRow(ctx, `UPDATE runs SET status = 'running' WHERE id = $1 RETURNING updated_at`, f.run).Scan(&after); err != nil {
 		t.Fatal(err)
 	}
 	if !after.After(before) {

@@ -60,6 +60,12 @@ type limits struct {
 	// readTimeout, writeTimeout, and idleTimeout bound one REST request, one
 	// response, and the keep-alive wait between requests.
 	readTimeout, writeTimeout, idleTimeout time.Duration
+	// leaseDuration is how long a delivery lease lasts unless an update
+	// extends it. Agents send one at a third of it. See ADR 0024.
+	leaseDuration time.Duration
+	// sweepInterval is how often leases are checked for expiry and waiting
+	// work is offered again. Zero turns the sweep off.
+	sweepInterval time.Duration
 }
 
 var defaultLimits = limits{
@@ -74,6 +80,8 @@ var defaultLimits = limits{
 	readTimeout:        30 * time.Second,
 	writeTimeout:       30 * time.Second,
 	idleTimeout:        60 * time.Second,
+	leaseDuration:      60 * time.Second,
+	sweepInterval:      10 * time.Second,
 }
 
 // Config configures a server.
@@ -309,6 +317,16 @@ func (s *Server) Serve(ctx context.Context, grpcListener, apiListener net.Listen
 	errs := make(chan error, 2)
 	go func() { errs <- s.grpc.Serve(grpcListener) }()
 	go func() { errs <- api.ServeTLS(apiListener, "", "") }()
+	sweepCtx, stopSweep := context.WithCancel(ctx)
+	swept := make(chan struct{})
+	go func() {
+		defer close(swept)
+		s.sweep(sweepCtx)
+	}()
+	defer func() {
+		stopSweep()
+		<-swept
+	}()
 
 	var err error
 	select {
