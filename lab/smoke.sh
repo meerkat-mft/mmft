@@ -20,8 +20,10 @@ for service in orchestrator relay agent-a agent-b; do
   expect_ok in_lab "$service" mmft version
 done
 
+# An empty database takes every migration the orchestrator embeds.
+migrations=$(find ../internal/db/migrations -name '*.sql' | wc -l | tr -d ' ')
 label="orchestrator migrates an empty database"
-if [ "$(in_lab orchestrator mmft-orchestrator migrate)" = '{"applied":1}' ]; then pass "$label"; else fail "$label"; fi
+if [ "$(in_lab orchestrator mmft-orchestrator migrate)" = "{\"applied\":$migrations}" ]; then pass "$label"; else fail "$label"; fi
 label="repeat migration changes nothing"
 if [ "$(in_lab orchestrator mmft-orchestrator migrate)" = '{"applied":0}' ]; then pass "$label"; else fail "$label"; fi
 label="agents hold no database URL"
