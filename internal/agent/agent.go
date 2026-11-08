@@ -45,7 +45,10 @@ const (
 	CAFile = "ca.crt"
 	// IdentityFile holds the agent's verified identity statement.
 	IdentityFile = "identity.json"
-	lockFile     = ".lock"
+	// AllowlistHashFile holds the hash of the allowlist the agent last
+	// started with, so it can notice a change.
+	AllowlistHashFile = "allowlist.sha256"
+	lockFile          = ".lock"
 
 	formatVersion = 1
 )

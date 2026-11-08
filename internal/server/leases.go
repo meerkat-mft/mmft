@@ -12,7 +12,7 @@ import (
 	"mmft.dev/mmft/internal/trust"
 )
 
-// Leases, as ADR 0024 defines. Each side of a delivery is work that one agent
+// Leases, as ADR 0026 defines. Each side of a delivery is work that one agent
 // claims under a lease. The orchestrator offers it while the agent is
 // connected, grants one claim, extends the lease with each update, and fails
 // the delivery when a lease expires.

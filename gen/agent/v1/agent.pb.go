@@ -1009,7 +1009,7 @@ func (x *Heartbeat) GetFreeDiskBytes() uint64 {
 // WorkOffer tells an agent that a run needs it, for one side of one delivery.
 // The agent verifies the flow version statement and its allowlist before it
 // claims the work. A manual run leaves flow_id and flow_version empty. An
-// offer can repeat until the work is claimed. See ADR 0024.
+// offer can repeat until the work is claimed. See ADR 0026.
 type WorkOffer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`

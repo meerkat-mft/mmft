@@ -18,7 +18,7 @@ import (
 )
 
 // Manual runs move one file from one agent's outbox to another's inbox, with
-// no flow, as ADR 0021 defines. Each side is claimed under a lease, as ADR 0024
+// no flow, as ADR 0021 defines. Each side is claimed under a lease, as ADR 0026
 // defines, and assigned over the agent's stream. The orchestrator stores the
 // source's manifest and the destination's receipt, and never sees the file's
 // contents.

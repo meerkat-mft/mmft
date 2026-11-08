@@ -61,7 +61,7 @@ type limits struct {
 	// response, and the keep-alive wait between requests.
 	readTimeout, writeTimeout, idleTimeout time.Duration
 	// leaseDuration is how long a delivery lease lasts unless an update
-	// extends it. Agents send one at a third of it. See ADR 0024.
+	// extends it. Agents send one at a third of it. See ADR 0026.
 	leaseDuration time.Duration
 	// sweepInterval is how often leases are checked for expiry and waiting
 	// work is offered again. Zero turns the sweep off.
@@ -267,6 +267,8 @@ func (s *Server) API() http.Handler {
 	mux.Handle("GET /api/v1/runs/{run_id}", s.requireAdmin(http.HandlerFunc(s.getRun)))
 	mux.Handle("POST /api/v1/flows", s.requireAdmin(http.HandlerFunc(s.createFlow)))
 	mux.Handle("GET /api/v1/flows", s.requireAdmin(http.HandlerFunc(s.listFlows)))
+	mux.Handle("GET /api/v1/flows/{flow_id}", s.requireAdmin(http.HandlerFunc(s.getFlow)))
+	mux.Handle("PUT /api/v1/flows/{flow_id}/retirement", s.requireAdmin(http.HandlerFunc(s.putFlowRetirement)))
 	mux.Handle("POST /api/v1/flows/{flow_id}/versions", s.requireAdmin(http.HandlerFunc(s.createFlowVersion)))
 	mux.Handle("GET /api/v1/flows/{flow_id}/versions/{version}", s.requireAdmin(http.HandlerFunc(s.getFlowVersion)))
 	mux.Handle("PUT /api/v1/flows/{flow_id}/versions/{version}/approval", s.requireAdmin(http.HandlerFunc(s.putFlowApproval)))

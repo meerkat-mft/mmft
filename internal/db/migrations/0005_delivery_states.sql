@@ -1,4 +1,4 @@
--- Delivery states and leases, as described in docs/data-model.md and ADR 0024.
+-- Delivery states and leases, as described in docs/data-model.md and ADR 0026.
 -- The database itself rejects a status change that isn't listed, so no code
 -- path can skip a state or revive a finished delivery, and it records every
 -- change of a delivery's status.

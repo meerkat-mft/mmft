@@ -171,9 +171,9 @@ func TestPaths(t *testing.T) {
 		{`\\server\share`, false},
 		{`relative\path`, false},
 	} {
-		err := checkPath(tc.path)
+		err := CheckPath(tc.path)
 		if (err == nil) != tc.ok {
-			t.Errorf("checkPath(%q) = %v, want ok %v", tc.path, err, tc.ok)
+			t.Errorf("CheckPath(%q) = %v, want ok %v", tc.path, err, tc.ok)
 		}
 	}
 }

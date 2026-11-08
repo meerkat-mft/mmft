@@ -25,7 +25,8 @@ const (
 	exitFailure = 1
 	exitUsage   = 2
 	exitExists  = 3
-	// exitRefused means an agent did not match what was collected from its host.
+	// exitRefused means a trust check refused: an agent did not match what was
+	// collected from its host, or a flow version did not match what was reviewed.
 	exitRefused = 4
 )
 
@@ -44,6 +45,14 @@ const usage = `usage:
                      --root-public FILE --root-fingerprint HEX --fingerprints FILE [--days N]
   mmft delivery send --api HOST:PORT --ca-fingerprint HEX --token-file FILE --workspace NAME
                      --from NAME --to NAME --file NAME [--wait] [--timeout DURATION]
+  mmft flow diff --api HOST:PORT --ca-fingerprint HEX --token-file FILE --root-public FILE
+                 --root-fingerprint HEX --flow ID --version N
+  mmft flow approve --api HOST:PORT --ca-fingerprint HEX --token-file FILE --root-public FILE
+                    --root-fingerprint HEX --flow ID --version N --sha256 HEX
+                    --admin-dir DIR --passphrase-file FILE --certificate FILE
+  mmft flow retire --api HOST:PORT --ca-fingerprint HEX --token-file FILE --root-public FILE
+                   --root-fingerprint HEX --flow ID --workspace NAME
+                   --admin-dir DIR --passphrase-file FILE --certificate FILE
 
 exit codes: 0 done, 1 failed, 2 usage, 3 safe repeat, 4 refused
 `
@@ -103,6 +112,12 @@ func dispatch(args []string, stdout, stderr io.Writer, now func() time.Time) err
 		return agentApprove(rest, stdout, stderr, now)
 	case "delivery send":
 		return deliverySend(rest, stdout, stderr, now)
+	case "flow diff":
+		return flowDiff(rest, stdout, stderr, now)
+	case "flow approve":
+		return flowApprove(rest, stdout, stderr, now)
+	case "flow retire":
+		return flowRetire(rest, stdout, stderr, now)
 	default:
 		return errUsage
 	}

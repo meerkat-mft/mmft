@@ -68,6 +68,10 @@ _Avoid_: Revision, draft
 An administrator's signature on a flow version, made in the CLI, without which agents will not run it.
 _Avoid_: Publish, sign-off
 
+**Retirement**:
+An administrator's signature, made in the CLI, that stops a flow for good. A retired flow takes no new versions or approvals.
+_Avoid_: Archive, delete, disable
+
 **Card**:
 One element on the flow canvas, such as a trigger, source, condition, or destination.
 _Avoid_: Node, block, step
@@ -155,7 +159,7 @@ The orchestrator's message telling a connected agent that one side of a delivery
 _Avoid_: Job offer
 
 **Delivery status**:
-Where a delivery stands: pending, claimed, transferring, verifying, and then succeeded or failed. Only the changes listed in ADR 0024 are allowed.
+Where a delivery stands: pending, claimed, transferring, verifying, and then succeeded or failed. Only the changes listed in ADR 0026 are allowed.
 _Avoid_: Phase
 
 **Partial failure**:
@@ -205,7 +209,7 @@ An agent's unique ID, derived from its agent fingerprint, so that neither the or
 _Avoid_: Agent UUID, host ID
 
 **Agent allowlist**:
-The locally held list of paths and destinations an agent may use, which the orchestrator cannot change.
+The locally held list of directories an agent may read and write, agents it may send to and receive from, and approvals a flow needs, which the orchestrator cannot change.
 _Avoid_: Agent policy, permissions
 
 **Audit event**:

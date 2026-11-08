@@ -18,9 +18,9 @@ This describes what the orchestrator stores and why, for Postgres 18. Terms foll
 | `enrollment_tokens` | One-use enrollment tokens, stored as hashes | Used once | Delete soon after expiry |
 | `agents` | One row per agent | Status changes | Life of the agent |
 | `agent_identities` | Each agent's keys and identity statements over time | Revoked, never edited | Kept with audit evidence |
-| `agent_presence` | Last contact and version | Constantly | Life of the agent |
+| `agent_presence` | Last contact, version, and allowlist hash | Constantly | Life of the agent |
 | `signed_statements` | Every signed statement, as received | Never | Kept with audit evidence |
-| `flows` | One row per flow: its workspace and name | Rarely | Life of the install |
+| `flows` | One row per flow: its workspace, name, and retirement | Rarely | Life of the install |
 | `flow_versions` | Each version's exact payload, its status, and its approval | Status changes, payload never | Kept with audit evidence |
 | `runs` | One row per trigger firing | Until finished | 13 months by default |
 | `deliveries` | One file to one destination | Until finished | 13 months by default |
@@ -33,7 +33,8 @@ This describes what the orchestrator stores and why, for Postgres 18. Terms foll
 workspaces ─┬─ agents ─┬─ agent_identities
             │          └─ agent_presence
             ├─ enrollment_tokens
-            ├─ flows ─── flow_versions ─── signed_statements (approval)
+            ├─ flows ─┬─ flow_versions ─── signed_statements (approval)
+            │         └─ signed_statements (retirement)
             └─ runs ─── deliveries ─┬─ delivery_files
                                     ├─ delivery_leases ─── agents
                                     ├─ delivery_events
@@ -52,7 +53,7 @@ A manual run, as ADR 0021 defines, fills the tables as follows:
 
 ## Delivery and run statuses
 
-The statuses and leases are defined in [ADR 0024](adr/0024-delivery-states-and-leases.md). The database enforces them: triggers reject any status change not listed in `delivery_status_transitions` or `run_status_transitions`, and a new delivery or run must start `pending`.
+The statuses and leases are defined in [ADR 0026](adr/0026-delivery-states-and-leases.md). The database enforces them: triggers reject any status change not listed in `delivery_status_transitions` or `run_status_transitions`, and a new delivery or run must start `pending`.
 
 ```text
 pending ──▶ claimed ──▶ transferring ──▶ verifying ──▶ succeeded
@@ -102,6 +103,8 @@ A flow belongs to one workspace, and its name is unique there. Its versions are 
 
 The flow's name isn't part of the signed payload, so renaming a flow needs no new approval.
 
+**Retiring a flow** stores its retirement on the `flows` row, exactly as received, with its statement in `signed_statements` and the time, as [ADR 0024](adr/0024-flow-retirement-statement.md) defines. The retirement must name the flow and its workspace. A retired flow takes no new drafts or approvals, and its versions stay as evidence.
+
 ## Personal data and evidence
 
 Audit events are hash-chained, so a record can't change. They must therefore never hold a file name. They refer to the delivery ID and the sealed file hash, and the name lives only in `delivery_files`.
@@ -135,7 +138,7 @@ At the ceiling, `deliveries` holds about 400 million rows, plus indexes. Most in
 
 Partitioning `deliveries` by month is the planned path, once real volumes need it. It requires a change of primary key, because a partition key must be part of the primary key. That needs a planned migration of existing rows, and references to `deliveries` must change at the same time.
 
-`agent_presence` is kept apart so that heartbeats don't rewrite rows holding keys. It uses a lower fill factor, so updates can stay on the same page.
+`agent_presence` is kept apart so that heartbeats don't rewrite rows holding keys. It uses a lower fill factor, so updates can stay on the same page. Each hello also records the SHA-256 of the agent's allowlist, `allowlist_sha256`, so a changed allowlist shows on the orchestrator ([ADR 0024](adr/0024-allowlist-file-and-enforcement.md)). It records only the hash, never the allowlist's contents.
 
 ## Still to design
 

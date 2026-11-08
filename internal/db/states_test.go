@@ -10,7 +10,7 @@ import (
 // deliveryStatuses are every status the deliveries table allows.
 var deliveryStatuses = []string{"pending", "claimed", "transferring", "verifying", "retry_wait", "succeeded", "failed", "cancelled"}
 
-// allowedDelivery are the status changes ADR 0024 allows. Any other must be
+// allowedDelivery are the status changes ADR 0026 allows. Any other must be
 // rejected by the database, whatever code sends it.
 var allowedDelivery = map[[2]string]bool{
 	{"pending", "claimed"}:        true,

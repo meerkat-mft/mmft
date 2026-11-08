@@ -97,6 +97,17 @@ func (f *fixture) sealAndSign(t *testing.T, data []byte, d Delivery) (Sealed, Ma
 	return s, m
 }
 
+// rootOf opens dir as a root for Open, until the test ends.
+func rootOf(t *testing.T, dir string) *os.Root {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return root
+}
+
 func assertEmpty(t *testing.T, dir string) {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -131,10 +142,11 @@ func TestRoundTrip(t *testing.T) {
 		if s.Size < 0 || uint64(s.Size) > MaxSealedSize(int64(size)) { // #nosec G115 -- checked above.
 			t.Errorf("size %d: sealed %d bytes, bound %d", size, s.Size, MaxSealedSize(int64(size)))
 		}
-		path, err := Open(s.Path, m, f.identity, f.dest)
+		name, err := Open(s.Path, m, f.identity, rootOf(t, f.dest))
 		if err != nil {
 			t.Fatalf("size %d: %v", size, err)
 		}
+		path := filepath.Join(f.dest, name)
 		got, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -235,7 +247,7 @@ func TestTamperedFileIsNeverDecrypted(t *testing.T) {
 
 			dest := t.TempDir()
 			id := &countingIdentity{inner: f.identity}
-			_, err = open(s.Path, m, id, dest)
+			_, err = open(s.Path, m, id, rootOf(t, dest))
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}
@@ -263,7 +275,7 @@ func TestChangeDuringOpenIsRefused(t *testing.T) {
 		changed[len(changed)-1] ^= 1
 		write(t, s.Path, changed)
 	}}
-	if _, err := open(s.Path, m, id, dest); err == nil {
+	if _, err := open(s.Path, m, id, rootOf(t, dest)); err == nil {
 		t.Fatal("opened a sealed file that changed during decryption")
 	}
 	assertEmpty(t, dest)
@@ -284,7 +296,7 @@ func TestSwapDuringOpenIsRefused(t *testing.T) {
 	afterHashCheck = func() { write(t, s.Path, other) }
 
 	dest := t.TempDir()
-	if _, err := Open(s.Path, m, f.identity, dest); !errors.Is(err, ErrHashMismatch) {
+	if _, err := Open(s.Path, m, f.identity, rootOf(t, dest)); !errors.Is(err, ErrHashMismatch) {
 		t.Fatalf("got %v, want ErrHashMismatch", err)
 	}
 	assertEmpty(t, dest)
@@ -548,6 +560,8 @@ func TestErrorsNameNoFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealed, manifest := f.sealAndSign(t, randomBytes(t, 100), delivery(deliveryA))
+	closed := rootOf(t, dir)
+	_ = closed.Close()
 
 	cases := map[string]struct {
 		err  error
@@ -556,8 +570,8 @@ func TestErrorsNameNoFiles(t *testing.T) {
 		"missing source":   {err: second(Seal(missing, f.spool, f.identity.Recipient())), want: fs.ErrNotExist},
 		"directory source": {err: second(Seal(dir, f.spool, f.identity.Recipient())), want: ErrNotRegular},
 		"missing spool":    {err: second(Seal(writeSource(t, []byte("x")), filepath.Join(dir, "spool"), f.identity.Recipient())), want: fs.ErrNotExist},
-		"missing sealed":   {err: second(Open(missing, manifest, f.identity, f.dest)), want: fs.ErrNotExist},
-		"missing dest":     {err: second(Open(sealed.Path, manifest, f.identity, filepath.Join(dir, "dest"))), want: fs.ErrNotExist},
+		"missing sealed":   {err: second(Open(missing, manifest, f.identity, rootOf(t, f.dest))), want: fs.ErrNotExist},
+		"closed dest":      {err: second(Open(sealed.Path, manifest, f.identity, closed)), want: fs.ErrClosed},
 	}
 	for label, c := range cases {
 		if c.err == nil {

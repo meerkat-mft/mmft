@@ -6,8 +6,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,6 +24,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	agentv1 "mmft.dev/mmft/gen/agent/v1"
+	"mmft.dev/mmft/internal/allowlist"
 	"mmft.dev/mmft/internal/connca"
 	"mmft.dev/mmft/internal/server/servertest"
 )
@@ -430,4 +433,68 @@ func TestBadRenewalKeepsTheCurrentCertificate(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("a bad renewal replaced the saved certificate")
 	}
+}
+
+func TestHelloReportsTheAllowlistHash(t *testing.T) {
+	doc := "version: 1\napprovals: 1\nsend_to: [{workspace: lab}]\n"
+	for name, a := range map[string]*allowlist.Allowlist{"none": nil, "a file": allow(t, doc)} {
+		r := newRunner(t.TempDir(), RunConfig{Allowlist: a}, State{}, nil)
+		want := a.Hash()
+		if got := r.hello().GetHello().GetAllowlistHash(); !bytes.Equal(got, want[:]) {
+			t.Errorf("%s: hello has %x, want %x", name, got, want)
+		}
+	}
+	if none := (*allowlist.Allowlist)(nil).Hash(); none != sha256.Sum256(nil) {
+		t.Error("a missing allowlist doesn't hash as no bytes")
+	}
+}
+
+func TestAChangedAllowlistIsLogged(t *testing.T) {
+	dir := t.TempDir()
+	start := func(a *allowlist.Allowlist) *events {
+		t.Helper()
+		log := &events{}
+		cfg := RunConfig{Allowlist: a, Log: log}
+		cfg.defaults()
+		if err := newRunner(dir, cfg, State{}, nil).noteAllowlist(); err != nil {
+			t.Fatal(err)
+		}
+		return log
+	}
+	first := allow(t, "")
+	second := allow(t, "version: 1\napprovals: 1\nsend_to: [{workspace: lab}]\n")
+	if log := start(first); len(lines(t, log)) != 0 {
+		t.Fatalf("the first start logged %v", lines(t, log))
+	}
+	if log := start(first); len(lines(t, log)) != 0 {
+		t.Fatalf("an unchanged allowlist logged %v", lines(t, log))
+	}
+	log := start(second)
+	got := lines(t, log)
+	h1, h2 := first.Hash(), second.Hash()
+	if len(got) != 1 || got[0]["event"] != "allowlist changed" ||
+		got[0]["previous_sha256"] != hex.EncodeToString(h1[:]) || got[0]["sha256"] != hex.EncodeToString(h2[:]) {
+		t.Fatalf("logged %v", got)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, AllowlistHashFile))
+	if err != nil || string(saved) != hex.EncodeToString(h2[:]) {
+		t.Fatalf("saved %q, %v", saved, err)
+	}
+}
+
+// lines decodes every line logged so far.
+func lines(t *testing.T, e *events) []map[string]any {
+	t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []map[string]any
+	sc := bufio.NewScanner(bytes.NewReader(e.buf.Bytes()))
+	for sc.Scan() {
+		var m map[string]any
+		if err := json.Unmarshal(sc.Bytes(), &m); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, m)
+	}
+	return out
 }

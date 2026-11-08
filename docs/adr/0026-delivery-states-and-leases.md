@@ -1,4 +1,4 @@
-# 0024. Delivery states and leases
+# 0026. Delivery states and leases
 
 Status: Accepted
 Date: 2026-11-08
