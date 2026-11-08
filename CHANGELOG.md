@@ -31,6 +31,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - `mmft-agent run` reads the agent allowlist from `/etc/mmft/allowlist.yaml`, or the file named by `--allowlist`: the directories it may read and write, the agents it may send to and receive from by ID or workspace, and how many approvals a flow needs. A missing or empty allowlist denies everything. See ADR 0024.
 - Each agent reports the SHA-256 of its allowlist when it connects, the orchestrator keeps it, and the agent logs `allowlist changed` when it starts with a different one.
 - `PUT /api/v1/flows/{flow_id}/versions/{version}/approval` stores an approval only if it verifies against the administrator certificates and root key it carries and signs exactly that version's payload. Approving a version supersedes older ones. See ADR 0023.
+- `mmft flow diff` shows what changed from the approved version, once that version's approval verifies against the pinned root, and prints the payload's SHA-256. `mmft flow approve --sha256 HEX` signs a version only when its payload has that hash, and exits 4 otherwise.
+- `mmft flow retire --workspace NAME` signs a retirement that stops a flow for good. `PUT /api/v1/flows/{flow_id}/retirement` stores it, and a retired flow takes no new drafts or approvals. `GET /api/v1/flows/{flow_id}` returns one flow, and flows report `retired`. See ADR 0024.
 
 ### Security
 

@@ -20,6 +20,8 @@ $redocly lint api/openapi.yaml
 ajv="tools/node_modules/.bin/ajv validate --spec=draft2020 --strict=true -s api/flow-version.schema.json"
 go_only="agents-mismatch agents-unsorted destination-after-destination destination-on-source-agent
   loop repeated-card-id repeated-field-in-card same-destination-twice unknown-parent"
+echo "Checking the flow retirement schema"
+tools/node_modules/.bin/ajv compile --spec=draft2020 --strict=true -s api/flow-retirement.schema.json
 echo "Checking the flow version schema against the fixtures"
 $ajv -d "internal/flow/testdata/valid/*.json"
 for f in internal/flow/testdata/invalid/*.json; do

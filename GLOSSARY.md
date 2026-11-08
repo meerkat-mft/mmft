@@ -68,6 +68,10 @@ _Avoid_: Revision, draft
 An administrator's signature on a flow version, made in the CLI, without which agents will not run it.
 _Avoid_: Publish, sign-off
 
+**Retirement**:
+An administrator's signature, made in the CLI, that stops a flow for good. A retired flow takes no new versions or approvals.
+_Avoid_: Archive, delete, disable
+
 **Card**:
 One element on the flow canvas, such as a trigger, source, condition, or destination.
 _Avoid_: Node, block, step

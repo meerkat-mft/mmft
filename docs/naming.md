@@ -46,6 +46,8 @@ Commands follow `mmft <noun> <verb>`, using glossary nouns.
 ```text
 mmft flow list
 mmft flow validate invoices.json
+mmft flow diff --flow ID --version 4
+mmft flow approve --flow ID --version 4 --sha256 HEX
 mmft run start invoices-nl
 mmft agent enroll
 mmft audit verify
@@ -59,7 +61,7 @@ Both `mmft` and `mmft-agent` use the same exit codes, so a deployment tool can a
 | 1 | Failed. The JSON error on stderr says why. |
 | 2 | Incorrect usage. Usage text, not JSON, is on stderr. |
 | 3 | Safe repeat: the thing already exists exactly as asked, and nothing changed |
-| 4 | Refused by a trust check: the orchestrator refused an enrollment token, or `mmft agent approve` refused an agent that doesn't match its host |
+| 4 | Refused by a trust check: the orchestrator refused an enrollment token, `mmft agent approve` refused an agent that doesn't match its host, `mmft flow approve` refused a version whose SHA-256 doesn't match the one given, `mmft flow diff` refused an approved version that doesn't verify against the pinned root, or `mmft flow retire` refused a flow in another workspace |
 | 5 | Waiting: `mmft-agent identity` found no approved identity yet |
 
 ## Commit scopes
